@@ -69,3 +69,11 @@ test('colWidth: widest measured string plus padding', async () => {
   const device = { measure: async (items) => items.map((i) => ({ width: i.text.length * 10 })) };
   assert.equal(await colWidth(device, ['ESPN', 'SECN', 'ESPN2'], 12), 66);
 });
+
+test('upsetSize: spread counts only when the loser was the betting favourite', () => {
+  // #21 Florida (-3.5 favourite) beats #4 Ole Miss: rank upset, but the loser was the betting underdog.
+  const fav = g({ awayName: 'Ole Miss', homeName: 'Florida', awayRank: 4, homeRank: 21, awayScore: 10, homeScore: 30, spread: 'Florida -3.5' });
+  assert.equal(upsetSize(fav), 26 - 4);
+  const dog = g({ awayName: 'Ole Miss', homeName: 'Florida', awayRank: 4, homeRank: 21, awayScore: 10, homeScore: 30, spread: 'Ole Miss -6' });
+  assert.equal(upsetSize(dog), 6 + 26 - 4);
+});

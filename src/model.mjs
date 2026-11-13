@@ -9,7 +9,8 @@ const DEAD = new Set(['STATUS_POSTPONED', 'STATUS_CANCELED', 'STATUS_CANCELLED',
 const titleCase = (id) => id.split('-').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
 
 function clockTextOf(ev) {
-  const st = ev.status, type = st.type;
+  const st = ev.status, type = st?.type;
+  if (!type) return '';
   if (type.state === 'pre') return '';
   if (type.state === 'post') return type.completed ? 'Final' : '';
   if (type.name === 'STATUS_HALFTIME') return 'Half';
@@ -31,7 +32,8 @@ export function buildGames(current, espnEvents = []) {
     if (g.stakesScore != null) stakes.set(g.cfbdId, g.stakesScore);
   }
   const teams = current.teams ?? {};
-  return current.allGames.map((g) => {
+  const valid = (g) => g && g.cfbdId != null && g.away && g.home && !Number.isNaN(new Date(g.when).getTime());
+  return current.allGames.filter(valid).map((g) => {
     const ev = byId.get(String(g.cfbdId));
     const comp = ev?.competitions?.[0];
     const side = (ha) => comp?.competitors?.find((c) => c.homeAway === ha);

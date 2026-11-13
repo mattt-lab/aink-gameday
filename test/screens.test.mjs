@@ -115,3 +115,27 @@ test('hashCommands ignores the Updated text', async () => {
   assert.equal(hashCommands(a.commands), hashCommands(b.commands));
   assert.ok(!stripMeta(a.commands).some((c) => '_volatile' in c));
 });
+
+test("live finals hold (all Saturday final at 11 PM): footer says '+N more finals', never 'more live'", async () => {
+  const s = await screen('2026-11-15T06:00:00Z', 'scores-week-final.json');
+  assert.deepEqual(s.view, { kind: 'day', date: '2026-11-14', mode: 'live' });
+  assert.ok(!s.texts.some((t) => /more live/.test(t)));
+  assert.match(s.texts.find((t) => /more finals/.test(t)), /^\+\d+ more finals$/);
+  assert.match(s.texts.find((t) => /\|/.test(t) && t.includes('PM')), /Final$/);
+});
+
+test('live: only Washington live, the rest final, two still to kick off -> Up next table shows them', async () => {
+  const late = new Set(['texas-tech', 'colorado-state']); // 7:30 PM and 8:30 PM kickoffs
+  const s = await screen('2026-11-15T01:30:00Z', 'scores-week-final.json', {
+    games: (gs) => gs.map((g) => {
+      if (g.away === 'washington') return { ...g, state: 'in', completed: false, status: 'in_progress', period: 4, clockText: '4Q 2:00', alert: null };
+      if (late.has(g.away)) return { ...g, state: 'pre', completed: false, status: 'scheduled', awayScore: null, homeScore: null, clockText: '', alert: null };
+      return g;
+    }),
+  });
+  assert.ok(!s.texts.some((t) => /more live/.test(t)));
+  const up = s.tables.find((t) => t.columns[0] === 'Up next');
+  assert.ok(up, 'up next table present');
+  assert.equal(up.rows.length, 2);
+  assert.match(s.texts.find((t) => /live$/.test(t)), /1 live$/);
+});

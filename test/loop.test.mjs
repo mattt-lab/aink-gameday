@@ -137,3 +137,62 @@ test('no data at all -> no draw, clear reason', async () => {
   assert.equal(r.redrew, false);
   assert.equal(r.reason, 'no data yet');
 });
+
+test('device drops after a good draw, comes back with the same data -> redraws once, then settles', async () => {
+  const h = harness();
+  assert.equal((await h.loop.tick()).redrew, true);
+  h.deviceDown = true;
+  h.advance(60);
+  const down = await h.loop.tick();
+  assert.equal(down.redrew, false);
+  assert.ok(down.errors.some((e) => /device unreachable/.test(e)));
+  h.deviceDown = false;
+  h.advance(60);
+  assert.equal((await h.loop.tick()).redrew, true); // it may have rebooted: redraw even though content is the same
+  h.advance(60);
+  assert.equal((await h.loop.tick()).reason, 'unchanged');
+});
+
+test('a draw that fails is retried next tick even though the content is unchanged', async () => {
+  const h = harness();
+  await h.loop.tick();
+  h.advance(11 * 60);
+  h.scores = { [fsuId]: { away: 0, home: 0, state: 'in', period: 1, clock: '15:00' } }; // view changes -> draw attempt
+  h.deviceDown = true;
+  h.now = new Date('2026-11-14T00:05:00Z');
+  const fail = await h.loop.tick();
+  assert.equal(fail.redrew, false);
+  h.deviceDown = false;
+  h.advance(60);
+  const r = await h.loop.tick();
+  assert.equal(r.redrew, true);
+});
+
+test('unusable current.json is rejected and the previous one kept', async () => {
+  const h = harness();
+  await h.loop.tick();
+  const bad = { ...CURRENT, allGames: 'nope' };
+  h.fetchFn = async (url) => ({ ok: true, status: 200, text: async () => JSON.stringify(bad) });
+  const h2 = harness();
+  h2.fetchFn = h.fetchFn;
+  const loop = createLoop({ config, device: h2.device, fetchFn: h2.fetchFn, clock: () => h2.now });
+  const r = await loop.tick();
+  assert.equal(r.reason, 'no data yet');
+  assert.ok(r.errors.some((e) => /no allGames/.test(e)));
+});
+
+test('an empty ESPN scoreboard does not wipe cached live scores', async () => {
+  const h = harness({ start: '2026-11-14T01:30:00Z' });
+  h.scores = { [fsuId]: { away: 7, home: 7, state: 'in', period: 2, clock: '5:00' } };
+  await h.loop.tick();
+  h.espnBody = '{"events":[]}';
+  h.advance(60);
+  const r = await h.loop.tick();
+  assert.equal(r.view.mode, 'live');
+  assert.ok(r.errors.some((e) => /keeping previous/.test(e)));
+});
+
+test('tick reports how many games are on the shown day', async () => {
+  const h = harness();
+  assert.equal((await h.loop.tick()).games, 3);
+});

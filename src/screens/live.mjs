@@ -1,7 +1,7 @@
 // Live (approved layout B): up to 3 cards for the most interesting games, the pinned-team bar, one
 // row per other live game, then upcoming games if every live game fit, then a one-line footer.
 // When nothing is live any more (the finals hold until 4 AM) the day's finals take the cards/rows.
-import { gamesOn } from '../model.mjs';
+import { gamesOn, isDone } from '../model.mjs';
 import { interest, stakesOf, abbrevNetwork } from '../rank.mjs';
 import { fmtTime } from '../time.mjs';
 import { PAD_X, PAD_Y, GAP, W, SCREEN_H, TINY, BODY, FOOTER_H, teamLabel, fitLabels, volatileHeaderText, footerOp, alertOp, pinBar } from './common.mjs';
@@ -22,7 +22,7 @@ export async function buildLive(games, ctx) {
   const others = day.filter((g) => g !== pinned);
   const live = others.filter((g) => g.state === 'in');
   const finals = others.filter((g) => g.completed);
-  const upcoming = others.filter((g) => g.state === 'pre');
+  const upcoming = others.filter((g) => g.state === 'pre' && !isDone(g, ctx.now));
   const finalsOnly = live.length === 0;
   const featured = (finalsOnly ? finals : live).sort((a, b) => interest(b) - interest(a));
 
@@ -47,30 +47,43 @@ export async function buildLive(games, ctx) {
   }
 
   const rest = featured.slice(MAX_CARDS);
-  const footerFinals = finalsOnly ? [] : finals;
-  const needsFooter = (hiddenLive) => hiddenLive > 0 || footerFinals.length > 0;
-  let bottom = SCREEN_H - PAD_Y - (needsFooter(rest.length) ? FOOTER_H : 0);
-  const nRows = Math.max(0, Math.min(rest.length, Math.floor((bottom - y) / m.rowPitch12)));
-  const hiddenLive = rest.length - nRows;
-  bottom = SCREEN_H - PAD_Y - (needsFooter(hiddenLive) ? FOOTER_H : 0);
-  for (const [k, g] of rest.slice(0, nRows).entries()) cmds.push(...(await rowOps(g, y + k * m.rowPitch12, m, measure, eyes)));
-  if (nRows) y += nRows * m.rowPitch12 + GAP;
-
-  if (hiddenLive === 0 && upcoming.length) {
+  const roomRows = (bottom) => Math.max(0, Math.floor((bottom - y) / m.rowPitch12));
+  const drawRows = async (list) => {
+    for (const [k, g] of list.entries()) cmds.push(...(await rowOps(g, y + k * m.rowPitch12, m, measure, eyes)));
+    if (list.length) y += list.length * m.rowPitch12 + GAP;
+  };
+  const drawUpcoming = async (bottom) => {
     const fit = Math.max(0, Math.floor((bottom - y - m.tableHeaderH12) / m.rowPitch12));
     const ups = [...upcoming].sort((a, b) => stakesOf(b) - stakesOf(a)).slice(0, fit).sort((a, b) => a.when - b.when);
-    if (ups.length) {
-      const labels = await fitLabels(ups.map((g) => `${teamLabel(g.awayName, g.awayRank)} at ${teamLabel(g.homeName, g.homeRank)}`), W - 210 - 16, BODY, false, measure);
-      cmds.push({ op: 'table', x: PAD_X, y, w: W, columns: ['Up next', 'TV', 'Kick'], widths: [0, 100, 110], align: ['left', 'left', 'right'],
-        size: BODY, lines: true, rows: ups.map((g, i) => [labels[i], abbrevNetwork(g.network), fmtTime(g.when, tz)]) });
-    }
-  }
+    if (!ups.length) return;
+    const labels = await fitLabels(ups.map((g) => `${teamLabel(g.awayName, g.awayRank)} at ${teamLabel(g.homeName, g.homeRank)}`), W - 210 - 16, BODY, false, measure);
+    cmds.push({ op: 'table', x: PAD_X, y, w: W, columns: ['Up next', 'TV', 'Kick'], widths: [0, 100, 110], align: ['left', 'left', 'right'],
+      size: BODY, lines: true, rows: ups.map((g, i) => [labels[i], abbrevNetwork(g.network), fmtTime(g.when, tz)]) });
+    y += m.tableHeaderH12 + ups.length * m.rowPitch12 + GAP;
+  };
 
   const foot = [];
-  if (hiddenLive) foot.push(`+${hiddenLive} more live`);
-  if (footerFinals.length) {
-    const notable = [...footerFinals].sort((a, b) => (b.alert === 'upset') - (a.alert === 'upset') || rankWeight(b) - rankWeight(a));
-    foot.push('Final: ' + notable.map((g) => `${teamLabel(g.awayName, g.awayRank)} ${g.awayScore}, ${teamLabel(g.homeName, g.homeRank)} ${g.homeScore}`).join('  |  '));
+  if (!finalsOnly) {
+    // Other games are live: their rows first; upcoming only once every live game is on screen; finals -> footer.
+    const full = SCREEN_H - PAD_Y;
+    const bottom = full - (rest.length > roomRows(full) || finals.length ? FOOTER_H : 0);
+    const nRows = Math.min(rest.length, roomRows(bottom));
+    await drawRows(rest.slice(0, nRows));
+    const hiddenLive = rest.length - nRows;
+    if (!hiddenLive) await drawUpcoming(bottom);
+    if (hiddenLive) foot.push(`+${hiddenLive} more live`);
+    if (finals.length) {
+      const notable = [...finals].sort((a, b) => (b.alert === 'upset') - (a.alert === 'upset') || rankWeight(b) - rankWeight(a));
+      foot.push('Final: ' + notable.map((g) => `${teamLabel(g.awayName, g.awayRank)} ${g.awayScore}, ${teamLabel(g.homeName, g.homeRank)} ${g.homeScore}`).join('  |  '));
+    }
+  } else {
+    // Nothing else live (finals hold, or only the pinned game is on): games still to come first,
+    // then the remaining finals as rows, then "+N more finals".
+    const bottom = SCREEN_H - PAD_Y - FOOTER_H;
+    await drawUpcoming(bottom);
+    const nRows = Math.min(rest.length, roomRows(bottom));
+    await drawRows(rest.slice(0, nRows));
+    if (rest.length > nRows) foot.push(`+${rest.length - nRows} more finals`);
   }
   if (foot.length) cmds.push(footerOp(foot.join('   |   ')));
 

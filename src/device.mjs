@@ -1,10 +1,12 @@
+const TIMEOUT_MS = 20_000; // a full render takes ~4 s; anything past this is a hung device
+
 export function createDevice(baseUrl, fetchFn = fetch) {
   const base = baseUrl.replace(/\/+$/, '');
 
   async function call(path, init) {
     let res;
     try {
-      res = await fetchFn(base + path, init);
+      res = await fetchFn(base + path, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
     } catch (e) {
       throw new Error(`device unreachable: ${e.message}`);
     }

@@ -1,3 +1,5 @@
+import { parseSpread } from './alerts.mjs';
+
 // Ordering rules: which live games get cards, which upcoming games survive when space runs out,
 // and how big an upset was. Plus the two text-shortening rules the screens share.
 
@@ -26,8 +28,10 @@ export function stakesOf(g) {
 
 /** Size of a finished upset: how favoured the loser was, plus a bonus for a better-ranked loser. */
 export function upsetSize(g) {
-  const loserRank = g.awayScore > g.homeScore ? g.homeRank : g.awayRank;
-  return spreadPoints(g.spread) + (loserRank ? 26 - loserRank : 0);
+  const loser = g.awayScore > g.homeScore ? 'home' : 'away';
+  const loserRank = loser === 'home' ? g.homeRank : g.awayRank;
+  const { side, points } = parseSpread(g.spread, g.awayName, g.homeName);
+  return (side === loser ? points ?? 0 : 0) + (loserRank ? 26 - loserRank : 0);
 }
 
 /** Used only when a name doesn't fit its box. */

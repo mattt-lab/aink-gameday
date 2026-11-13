@@ -116,3 +116,13 @@ test('time helpers', () => {
   assert.equal(ymd('2026-11-14'), '20261114');
   assert.equal(addDays('2026-11-30', 1), '2026-12-01');
 });
+
+test('malformed rows are skipped, events without status do not crash', () => {
+  const cur = current();
+  cur.allGames.push({ cfbdId: 1, away: 'x', home: 'y' }, { cfbdId: 2, when: '2026-11-14T20:00:00Z' }, null);
+  const evs = events();
+  delete evs[0].status;
+  const games = buildGames(cur, evs);
+  assert.equal(games.length, current().allGames.length);
+  assert.doesNotThrow(() => pickView(games, new Date('2026-11-14T16:40Z'), TZ));
+});

@@ -60,3 +60,10 @@ test('device: render posts commands with full refresh by default', async () => {
   await d.render([{ op: 'clear' }]);
   assert.deepEqual(JSON.parse(init.body), { commands: [{ op: 'clear' }], dryRun: false, refresh: 'full' });
 });
+
+test('device: requests carry a timeout signal', async () => {
+  let init;
+  const d = createDevice('http://dev', async (u, i) => { init = i; return { ok: true, status: 200, text: async () => '{}' }; });
+  await d.health();
+  assert.ok(init.signal instanceof AbortSignal);
+});

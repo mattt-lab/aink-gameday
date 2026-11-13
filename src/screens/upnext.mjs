@@ -1,5 +1,5 @@
 // Up Next: one day's not-yet-started games, kickoff order, lowest stakes dropped first when they don't fit.
-import { gamesOn } from '../model.mjs';
+import { gamesOn, isDone } from '../model.mjs';
 import { stakesOf, abbrevNetwork } from '../rank.mjs';
 import { colWidth } from '../metrics.mjs';
 import { fmtTime, fmtDayTitle, localDate, localHour } from '../time.mjs';
@@ -12,7 +12,7 @@ const FOOTER_RESERVE = GAP + 20;
  */
 export async function buildUpNext(games, ctx) {
   const { tz, metrics: m, measure } = ctx;
-  const pending = gamesOn(games, ctx.dayDate, tz).filter((g) => g.state === 'pre' && !g.dead);
+  const pending = gamesOn(games, ctx.dayDate, tz).filter((g) => g.state === 'pre' && !g.dead && !isDone(g, ctx.now));
   const first = pending[0]?.when ?? new Date(`${ctx.dayDate}T19:00:00Z`);
   const tonight = ctx.dayDate !== localDate(ctx.now, tz) ? '' : localHour(ctx.now, tz) >= 16 ? '  (Tonight)' : '  (Today)';
 

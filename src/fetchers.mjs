@@ -1,14 +1,21 @@
 // The only two network data sources. No CFBD calls, ever.
 
+const TIMEOUT_MS = 15_000; // a stalled request must not freeze the loop
+
 async function getJson(url, fetchFn, label) {
   let res;
   try {
-    res = await fetchFn(url, { headers: { accept: 'application/json' } });
+    res = await fetchFn(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(TIMEOUT_MS) });
   } catch (e) {
     throw new Error(`${label} unreachable: ${e.message}`);
   }
   if (!res.ok) throw new Error(`${label} HTTP ${res.status}`);
-  const text = await res.text();
+  let text;
+  try {
+    text = await res.text();
+  } catch (e) {
+    throw new Error(`${label} unreachable: ${e.message}`);
+  }
   try {
     return JSON.parse(text);
   } catch {
@@ -26,5 +33,6 @@ export async function fetchCurrent(url, fetchFn = fetch) {
 /** ESPN FBS scoreboard for one ESPN date ('YYYYMMDD'). */
 export async function fetchScoreboard(base, ymd, fetchFn = fetch) {
   const data = await getJson(`${base}?groups=80&limit=300&dates=${ymd}`, fetchFn, `ESPN ${ymd}`);
-  return Array.isArray(data?.events) ? data.events : [];
+  if (!Array.isArray(data?.events)) throw new Error(`ESPN ${ymd} has no events list`);
+  return data.events;
 }
