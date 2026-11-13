@@ -23,3 +23,18 @@ test("device: network error becomes 'device unreachable'", async () => {
   await assert.rejects(() => d.health(), /device unreachable/);
   await assert.rejects(() => d.render([]), /device unreachable/);
 });
+
+test('device: measure posts the raw array and returns parsed array', async () => {
+  let url, init;
+  const fake = async (u, i) => { url = u; init = i; return { ok: true, status: 200, json: async () => [{ width: 52, height: 45, lines: 1 }] }; };
+  const items = [{ text: '88', size: 24, bold: true }];
+  const out = await createDevice('http://dev', fake).measure(items);
+  assert.equal(url, 'http://dev/measure');
+  assert.deepEqual(JSON.parse(init.body), items);
+  assert.deepEqual(out, [{ width: 52, height: 45, lines: 1 }]);
+});
+
+test('device: non-2xx becomes device error', async () => {
+  const d = createDevice('http://dev', async () => ({ ok: false, status: 500, json: async () => ({}) }));
+  await assert.rejects(() => d.health(), /device error.*500/);
+});

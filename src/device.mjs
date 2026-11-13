@@ -20,7 +20,7 @@ export function createDevice(baseUrl, fetchFn = fetch) {
       return (await call('/health')).json();
     },
     async measure(items) {
-      return (await postJson('/measure', { items })).json();
+      return (await postJson('/measure', items)).json();
     },
     async naturalHeight(op) {
       const res = await postJson('/canvas', { dryRun: true, commands: [{ ...op, x: 20, y: 0, w: 760 }] });
