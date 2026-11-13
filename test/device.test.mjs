@@ -6,7 +6,7 @@ test('device: naturalHeight posts a dryRun and returns bbox height', async () =>
   let url, init;
   const fake = async (u, i) => {
     url = u; init = i;
-    return { ok: true, status: 200, json: async () => ({ validation: { commands: [{ bbox: [0, 0, 800, 572] }] } }) };
+    return { ok: true, status: 200, text: async () => JSON.stringify({ validation: { commands: [{ bbox: [0, 0, 800, 572] }] } }) };
   };
   const d = createDevice('http://dev', fake);
   const h = await d.naturalHeight({ op: 'text', text: 'hi' });
@@ -26,7 +26,7 @@ test("device: network error becomes 'device unreachable'", async () => {
 
 test('device: measure posts the raw array and returns parsed array', async () => {
   let url, init;
-  const fake = async (u, i) => { url = u; init = i; return { ok: true, status: 200, json: async () => [{ width: 52, height: 45, lines: 1 }] }; };
+  const fake = async (u, i) => { url = u; init = i; return { ok: true, status: 200, text: async () => JSON.stringify([{ width: 52, height: 45, lines: 1 }]) }; };
   const items = [{ text: '88', size: 24, bold: true }];
   const out = await createDevice('http://dev', fake).measure(items);
   assert.equal(url, 'http://dev/measure');
@@ -35,6 +35,28 @@ test('device: measure posts the raw array and returns parsed array', async () =>
 });
 
 test('device: non-2xx becomes device error', async () => {
-  const d = createDevice('http://dev', async () => ({ ok: false, status: 500, json: async () => ({}) }));
+  const d = createDevice('http://dev', async () => ({ ok: false, status: 500, text: async () => '{}' }));
   await assert.rejects(() => d.health(), /device error.*500/);
+});
+
+test('device: HTML body instead of JSON becomes device error', async () => {
+  const d = createDevice('http://dev', async () => ({ ok: true, status: 200, text: async () => '<html>oops</html>' }));
+  await assert.rejects(() => d.health(), /device error: \/health returned non-JSON/);
+});
+
+test('device: body read failure becomes device unreachable', async () => {
+  const d = createDevice('http://dev', async () => ({ ok: true, status: 200, text: async () => { throw new Error('socket reset'); } }));
+  await assert.rejects(() => d.render([]), /device unreachable: socket reset/);
+});
+
+test('device: dryRun response without bbox becomes device error', async () => {
+  const d = createDevice('http://dev', async () => ({ ok: true, status: 200, text: async () => '{"status":"dry_run"}' }));
+  await assert.rejects(() => d.naturalHeight({ op: 'text' }), /bad dryRun response/);
+});
+
+test('device: render posts commands with full refresh by default', async () => {
+  let init;
+  const d = createDevice('http://dev', async (u, i) => { init = i; return { ok: true, status: 200, text: async () => '{"status":"ok"}' }; });
+  await d.render([{ op: 'clear' }]);
+  assert.deepEqual(JSON.parse(init.body), { commands: [{ op: 'clear' }], dryRun: false, refresh: 'full' });
 });

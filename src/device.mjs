@@ -12,26 +12,48 @@ export function createDevice(baseUrl, fetchFn = fetch) {
     return res;
   }
 
-  const postJson = (path, body) =>
-    call(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  // Reading the body can fail too (connection dropped mid-response, or an HTML page instead of JSON);
+  // map those to the same 'device unreachable' / 'device error' messages the loop keys on.
+  async function readJson(res, path) {
+    let text;
+    try {
+      text = await res.text();
+    } catch (e) {
+      throw new Error(`device unreachable: ${e.message}`);
+    }
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error(`device error: ${path} returned non-JSON`);
+    }
+  }
+
+  const postJson = async (path, body) =>
+    readJson(await call(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }), path);
 
   return {
     async health() {
-      return (await call('/health')).json();
+      return readJson(await call('/health'), '/health');
     },
     async measure(items) {
-      return (await postJson('/measure', items)).json();
+      return postJson('/measure', items);
     },
     async naturalHeight(op) {
-      const res = await postJson('/canvas', { dryRun: true, commands: [{ ...op, x: 20, y: 0, w: 760 }] });
-      const data = await res.json();
-      return data.validation.commands[0].bbox[3];
+      const data = await postJson('/canvas', { dryRun: true, commands: [{ ...op, x: 20, y: 0, w: 760 }] });
+      const h = data?.validation?.commands?.[0]?.bbox?.[3];
+      if (typeof h !== 'number') throw new Error('device error: bad dryRun response');
+      return h;
     },
     async render(commands, { refresh = 'full' } = {}) {
-      return (await postJson('/canvas', { commands, dryRun: false, refresh })).json();
+      return postJson('/canvas', { commands, dryRun: false, refresh });
     },
     async screenshot() {
-      return Buffer.from(await (await call('/canvas/screenshot.png')).arrayBuffer());
+      const res = await call('/canvas/screenshot.png');
+      try {
+        return Buffer.from(await res.arrayBuffer());
+      } catch (e) {
+        throw new Error(`device unreachable: ${e.message}`);
+      }
     },
   };
 }
