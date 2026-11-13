@@ -29,7 +29,7 @@ if (args.fixture) {
   const { response } = await renderView(device, games, view, ctx);
   console.log(JSON.stringify(view), 'warnings:', JSON.stringify(response.warnings ?? []));
   if (args.shot) {
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 2000)); // let the device settle after the refresh
     mkdirSync(dirname(args.shot), { recursive: true });
     writeFileSync(args.shot, await device.screenshot());
     console.log('screenshot ->', args.shot);

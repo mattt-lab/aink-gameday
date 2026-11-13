@@ -47,7 +47,9 @@ export function createDevice(baseUrl, fetchFn = fetch) {
       return h;
     },
     async render(commands, { refresh = 'full' } = {}) {
-      return postJson('/canvas', { commands, dryRun: false, refresh });
+      // ?wait=1: return only after the panel refresh finishes, so nothing else hits the device mid-refresh
+      // (overlapping requests during a refresh are the leading suspect for the 2026-11-13 reboots).
+      return postJson('/canvas?wait=1', { commands, dryRun: false, refresh });
     },
     async screenshot() {
       const res = await call('/canvas/screenshot.png');
