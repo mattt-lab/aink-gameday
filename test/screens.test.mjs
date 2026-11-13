@@ -2,8 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { loadFixture } from '../src/fixtures.mjs';
-import { buildGames, pickView } from '../src/model.mjs';
-import { buildView } from '../src/render.mjs';
+import { buildGames, pickView, weekContext } from '../src/model.mjs';
+import { resultFor } from '../src/screens/top25.mjs';
+import { buildView, withReviewPage } from '../src/render.mjs';
 import { hashCommands, stripMeta } from '../src/screens/common.mjs';
 
 const TZ = 'America/Phoenix';
@@ -160,4 +161,32 @@ test('review rows read "away at home" with the score away-home and the winner bo
 test('no internal _ keys reach the device', async () => {
   const s = await screen('2026-11-16T19:00:00Z', 'scores-week-final.json');
   assert.ok(!/"_(table|pinBar|volatile)"/.test(s.json));
+});
+
+test('top25: 25 ranked teams in two columns, losses bold with fire, no pinned bar', async () => {
+  const { current, events } = loadFixture(DIR, { scoresFile: 'scores-week-final.json' });
+  const games = buildGames(current, events);
+  const now = new Date('2026-11-16T19:00:00Z');
+  const { commands } = await buildView(games, { kind: 'review', page: 'top25' }, { now, tz: TZ, pinnedTeam: 'washington', ...weekContext(current), metrics, measure, updatedAt: now });
+  const results = commands.filter((c) => c.op === 'text' && /^(W|L) \d+-\d+$|^Bye$|^-$/.test(c.text));
+  assert.equal(results.length, 25);
+  const losses = results.filter((c) => c.text.startsWith('L'));
+  assert.ok(losses.length > 0 && losses.every((c) => c.bold));
+  assert.equal(commands.filter((c) => c.op === 'icon' && c.name === 'fire').length, losses.length);
+  assert.ok(!commands.some((c) => c._pinBar));
+  assert.equal(commands.find((c) => c.op === 'text' && c.text === '1 Georgia').bold, true); // Georgia lost 10-13
+});
+
+test('top25: resultFor reports bye and unfinished games', () => {
+  assert.deepEqual(resultFor('nobody', []), { text: 'Bye', lost: false });
+  assert.deepEqual(resultFor('a', [{ away: 'a', home: 'b', completed: false, awayScore: null }]), { text: '-', lost: false });
+  assert.deepEqual(resultFor('b', [{ away: 'a', home: 'b', completed: true, awayScore: 20, homeScore: 17 }]), { text: 'L 17-20', lost: true });
+});
+
+test('review pages alternate every 5 minutes', () => {
+  const v = { kind: 'review' };
+  const a = withReviewPage(v, new Date('2026-11-16T19:00:00Z')).page;
+  const b = withReviewPage(v, new Date('2026-11-16T19:05:00Z')).page;
+  assert.notEqual(a, b);
+  assert.deepEqual(withReviewPage({ kind: 'day', date: 'x', mode: 'live' }, new Date()), { kind: 'day', date: 'x', mode: 'live' });
 });

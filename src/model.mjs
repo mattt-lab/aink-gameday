@@ -64,6 +64,14 @@ export function buildGames(current, espnEvents = []) {
   }).sort((a, b) => a.when - b.when);
 }
 
+/** Week-level context the screens need from current.json: week number, ranked list, team names. */
+export function weekContext(current) {
+  const week = current.meta?.currentWeek;
+  const r = current.rankingsByWeek?.[String(week)] ?? {};
+  const teamNames = Object.fromEntries(Object.entries(current.teams ?? {}).map(([id, t]) => [id, t.name]));
+  return { week, rankings: r.primary ?? [], rankingSource: r.primarySource ?? current.meta?.currentPrimarySource, teamNames };
+}
+
 /**
  * Final, postponed/cancelled, or not in progress and kicked off more than 6 h ago (no ESPN status, or a
  * stale/stuck "pre" one -- either way it must not pin the screen to an old day).

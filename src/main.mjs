@@ -7,12 +7,12 @@ import { dirname } from 'node:path';
 import { loadConfig } from './config.mjs';
 import { createDevice } from './device.mjs';
 import { measureMetrics } from './metrics.mjs';
-import { buildGames, pickView } from './model.mjs';
+import { buildGames, pickView, weekContext } from './model.mjs';
 import { loadFixture } from './fixtures.mjs';
-import { renderView } from './render.mjs';
+import { renderView, withReviewPage } from './render.mjs';
 
 const { values: args } = parseArgs({
-  options: { fixture: { type: 'string' }, now: { type: 'string' }, scores: { type: 'string' }, shot: { type: 'string' } },
+  options: { fixture: { type: 'string' }, now: { type: 'string' }, scores: { type: 'string' }, shot: { type: 'string' }, page: { type: 'string' } },
 });
 
 const config = loadConfig();
@@ -22,9 +22,10 @@ if (args.fixture) {
   const now = args.now ? new Date(args.now) : new Date();
   const { current, events } = loadFixture(args.fixture, { scoresFile: args.scores });
   const games = buildGames(current, events);
-  const view = pickView(games, now, config.timeZone);
+  let view = withReviewPage(pickView(games, now, config.timeZone), now);
+  if (args.page && view.kind === 'review') view = { ...view, page: args.page };
   const metrics = await measureMetrics(device);
-  const ctx = { now, tz: config.timeZone, pinnedTeam: config.pinnedTeam, week: current.meta?.currentWeek, metrics, measure: device.measure, updatedAt: now };
+  const ctx = { now, tz: config.timeZone, pinnedTeam: config.pinnedTeam, ...weekContext(current), metrics, measure: device.measure, updatedAt: now };
   const { response } = await renderView(device, games, view, ctx);
   console.log(JSON.stringify(view), 'warnings:', JSON.stringify(response.warnings ?? []));
   if (args.shot) {

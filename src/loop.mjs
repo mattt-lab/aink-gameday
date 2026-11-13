@@ -1,9 +1,9 @@
 // The refresh loop: fetch on a cadence, keep the last good data, redraw only when the screen's
 // content changed (and in live mode no more than every 2 minutes, since each refresh flashes).
 import { fetchCurrent, fetchScoreboard } from './fetchers.mjs';
-import { buildGames, pickView, gamesOn, isDone } from './model.mjs';
+import { buildGames, pickView, gamesOn, isDone, weekContext } from './model.mjs';
 import { measureMetrics } from './metrics.mjs';
-import { buildView } from './render.mjs';
+import { buildView, withReviewPage } from './render.mjs';
 import { stripMeta } from './screens/common.mjs';
 import { localDate, addDays, ymd, fmtTime } from './time.mjs';
 
@@ -98,7 +98,7 @@ export function createLoop({ config, device, fetchFn = fetch, clock = () => new 
     const keep = new Set(weekDates().map(ymd));
     for (const k of s.espn.keys()) if (!keep.has(k)) s.espn.delete(k);
     games = buildGames(s.current, allEvents());
-    view = pickView(games, now, tz);
+    view = withReviewPage(pickView(games, now, tz), now);
     const shown = view.kind === 'day' ? gamesOn(games, view.date, tz).length : games.length;
     const done = (r) => ({ ...r, games: shown });
 
@@ -110,7 +110,7 @@ export function createLoop({ config, device, fetchFn = fetch, clock = () => new 
       return done({ view, redrew: false, reason: 'device unreachable', errors });
     }
 
-    const ctx = { now, tz, pinnedTeam: config.pinnedTeam, week: s.current.meta?.currentWeek, metrics: s.metrics, measure: device.measure, updatedAt: s.dataAt };
+    const ctx = { now, tz, pinnedTeam: config.pinnedTeam, ...weekContext(s.current), metrics: s.metrics, measure: device.measure, updatedAt: s.dataAt };
     let built;
     try {
       built = await buildView(games, view, ctx);
