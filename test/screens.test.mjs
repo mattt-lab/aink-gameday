@@ -1,0 +1,117 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
+import { loadFixture } from '../src/fixtures.mjs';
+import { buildGames, pickView } from '../src/model.mjs';
+import { buildView } from '../src/render.mjs';
+import { hashCommands, stripMeta } from '../src/screens/common.mjs';
+
+const TZ = 'America/Phoenix';
+const DIR = fileURLToPath(new URL('../fixtures', import.meta.url));
+// Real values measured from the AInk (aink-7.5) on 2026-11-13.
+const metrics = { scoreW: 58, clockW: 107, rowPitch12: 33, tableHeaderH12: 33, headerH: 44, headerSubH: 54, pinBarH: 45 };
+const CHAR = { 9: 10, 12: 13, 18: 19, 24: 26 }; // device avgCharWidth per size
+const measure = async (items) => items.map((i) => ({ width: i.text.length * CHAR[i.size] }));
+
+async function screen(nowIso, scoresFile, overrides = {}) {
+  const { current, events } = loadFixture(DIR, { scoresFile });
+  let games = buildGames(current, events);
+  if (overrides.games) games = overrides.games(games);
+  const now = new Date(nowIso);
+  const view = pickView(games, now, TZ);
+  const { commands, hash } = await buildView(games, view, { now, tz: TZ, pinnedTeam: 'washington', week: 11, metrics, measure, updatedAt: now });
+  const texts = commands.filter((c) => c.op === 'text').map((c) => c.text);
+  return { view, commands, hash, texts, tables: commands.filter((c) => c.op === 'table'), json: JSON.stringify(stripMeta(commands)) };
+}
+
+test("upnext Saturday shows 9 rows in kickoff order, footer '+N lower-stakes games hidden'", async () => {
+  const s = await screen('2026-11-14T16:40:00Z');
+  assert.deepEqual(s.view, { kind: 'day', date: '2026-11-14', mode: 'upnext' });
+  const rows = s.tables[0].rows;
+  assert.equal(rows.length, 9);
+  const footer = s.texts.find((t) => /lower-stakes/.test(t));
+  assert.match(footer, /^\+\d+ lower-stakes games hidden$/);
+  const pending = 56 - 0; // at 9:40 AM nothing has kicked off
+  assert.equal(rows.length + Number(footer.match(/\d+/)[0]), pending);
+  const mins = rows.map((r) => { const [h, m] = r[0].split(/[: ]/); return ((+h % 12) + (r[0].endsWith('PM') ? 12 : 0)) * 60 + +m; });
+  assert.deepEqual(mins, [...mins].sort((a, b) => a - b));
+});
+
+test("upnext Friday shows 3 rows, no footer, subtitle ends '(Tonight)' after 4 PM / '(Today)' before", async () => {
+  const eve = await screen('2026-11-13T23:30:00Z'); // 4:30 PM
+  assert.equal(eve.tables[0].rows.length, 3);
+  assert.ok(!eve.texts.some((t) => /hidden/.test(t)));
+  assert.match(eve.commands.find((c) => c.op === 'header').subtitle, /\(Tonight\)$/);
+  const noon = await screen('2026-11-13T19:00:00Z');
+  assert.match(noon.commands.find((c) => c.op === 'header').subtitle, /\(Today\)$/);
+});
+
+test('upnext never contains a pinned-team box', async () => {
+  const s = await screen('2026-11-14T16:40:00Z');
+  assert.ok(!s.commands.some((c) => c.op === 'box'));
+});
+
+test("live Saturday: 3 cards, a pinned bar containing 'Washington 7', footer starts '+'", async () => {
+  const s = await screen('2026-11-14T21:47:00Z', 'scores-sat-1447.json');
+  assert.equal(s.view.mode, 'live');
+  assert.equal(s.commands.filter((c) => c.op === 'rect' && c.h === 134).length, 3);
+  const bar = s.commands.find((c) => c.op === 'box');
+  assert.match(bar.children[1].text, /^Washington 7/);
+  assert.match(s.texts.find((t) => /more live/.test(t)), /^\+\d+ more live/);
+});
+
+test("live: pinned bar stays and reads 'Final' when UW is final but other games are live", async () => {
+  const s = await screen('2026-11-14T21:47:00Z', 'scores-sat-1447.json', {
+    games: (gs) => gs.map((g) => (g.away === 'washington' ? { ...g, state: 'post', completed: true, status: 'final', clockText: 'Final' } : g)),
+  });
+  const bar = s.commands.find((c) => c.op === 'box');
+  assert.match(bar.children[2].text, /^Final/);
+});
+
+test('live Friday: 2 cards, an Up next table with Houston, no footer', async () => {
+  const s = await screen('2026-11-14T02:40:00Z', 'scores-fri-1940.json');
+  assert.equal(s.commands.filter((c) => c.op === 'rect' && c.h === 134).length, 2);
+  assert.equal(s.tables.length, 1);
+  assert.match(s.tables[0].rows[0][0], /Houston at Colorado/);
+  assert.ok(!s.texts.some((t) => /^Final:|more live/.test(t)));
+});
+
+test('live: every card and row contains its network text', async () => {
+  const s = await screen('2026-11-14T21:47:00Z', 'scores-sat-1447.json');
+  const tiny = s.commands.filter((c) => c.op === 'text' && c.size === 9 && c.w <= 120).map((c) => c.text);
+  // 3 cards + 5 rows on this fixture, each with a network
+  assert.equal(tiny.length, 8);
+  assert.ok(tiny.every((t) => t.length > 0));
+});
+
+test('live: alert ops: fire icon for upset, image op for tight, none in Q1/Q2', async () => {
+  const fri = await screen('2026-11-14T02:40:00Z', 'scores-fri-1940.json');
+  // FSU-Pitt 4Q 20-24 -> tight (image); Illinois-UCLA Q1 -> nothing
+  assert.equal(fri.commands.filter((c) => c.op === 'image').length, 1);
+  assert.equal(fri.commands.filter((c) => c.op === 'icon' && c.name === 'fire').length, 0);
+  const sat = await screen('2026-11-14T21:47:00Z', 'scores-sat-1447.json');
+  assert.ok(sat.commands.some((c) => c.op === 'icon' && c.name === 'fire'));
+});
+
+test("live: a null network renders '' not 'null'", async () => {
+  const s = await screen('2026-11-14T21:47:00Z', 'scores-sat-1447.json', { games: (gs) => gs.map((g) => ({ ...g, network: null })) });
+  assert.ok(!/"text":"(null|undefined)"/.test(s.json));
+  assert.ok(!/null|undefined/.test(s.texts.join('|')));
+});
+
+test("review: Upsets and Close finishes tables, pinned bar 'Final', no bar on a UW bye", async () => {
+  const s = await screen('2026-11-16T19:00:00Z', 'scores-week-final.json');
+  assert.deepEqual(s.view, { kind: 'review' });
+  assert.deepEqual(s.tables.map((t) => t.columns[0]), ['Upsets', 'Close finishes']);
+  assert.equal(s.commands.find((c) => c.op === 'box').children[2].text, 'Final');
+  const bye = await screen('2026-11-16T19:00:00Z', 'scores-week-final.json', { games: (gs) => gs.filter((g) => g.away !== 'washington' && g.home !== 'washington') });
+  assert.ok(!bye.commands.some((c) => c.op === 'box'));
+});
+
+test('hashCommands ignores the Updated text', async () => {
+  const a = await screen('2026-11-14T16:40:00Z');
+  const b = await screen('2026-11-14T16:41:00Z');
+  assert.notEqual(JSON.stringify(a.commands), JSON.stringify(b.commands));
+  assert.equal(hashCommands(a.commands), hashCommands(b.commands));
+  assert.ok(!stripMeta(a.commands).some((c) => '_volatile' in c));
+});

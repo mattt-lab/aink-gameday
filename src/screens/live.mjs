@@ -1,0 +1,117 @@
+// Live (approved layout B): up to 3 cards for the most interesting games, the pinned-team bar, one
+// row per other live game, then upcoming games if every live game fit, then a one-line footer.
+// When nothing is live any more (the finals hold until 4 AM) the day's finals take the cards/rows.
+import { gamesOn } from '../model.mjs';
+import { interest, stakesOf, abbrevNetwork } from '../rank.mjs';
+import { fmtTime } from '../time.mjs';
+import { PAD_X, PAD_Y, GAP, W, SCREEN_H, TINY, BODY, FOOTER_H, teamLabel, fitLabels, volatileHeaderText, footerOp, alertOp, pinBar } from './common.mjs';
+
+const CARD_H = 134, CARD_GAP = 10, MAX_CARDS = 3;
+const ALERT_W = 28, NET_W = 90;
+
+const isPinned = (g, team) => g.away === team || g.home === team;
+const rankWeight = (g) => [g.awayRank, g.homeRank].reduce((s, r) => s + (r ? 26 - r : 0), 0);
+
+/**
+ * ctx = { now, tz, dayDate, pinnedTeam, metrics, measure, eyes }
+ */
+export async function buildLive(games, ctx) {
+  const { tz, metrics: m, measure, eyes } = ctx;
+  const day = gamesOn(games, ctx.dayDate, tz).filter((g) => !g.dead);
+  const pinned = day.find((g) => isPinned(g, ctx.pinnedTeam));
+  const others = day.filter((g) => g !== pinned);
+  const live = others.filter((g) => g.state === 'in');
+  const finals = others.filter((g) => g.completed);
+  const upcoming = others.filter((g) => g.state === 'pre');
+  const finalsOnly = live.length === 0;
+  const featured = (finalsOnly ? finals : live).sort((a, b) => interest(b) - interest(a));
+
+  const cmds = [{ op: 'clear' }, { op: 'header', x: PAD_X, y: PAD_Y, w: W, title: 'Gameday - Live', icon: 'bolt' }];
+  let y = PAD_Y + m.headerH + GAP;
+
+  const cards = featured.slice(0, MAX_CARDS);
+  if (cards.length) {
+    const cardW = Math.floor((W - CARD_GAP * (cards.length - 1)) / cards.length);
+    for (const [i, g] of cards.entries()) cmds.push(...(await cardOps(g, PAD_X + i * (cardW + CARD_GAP), y, cardW, m, measure, eyes)));
+    y += CARD_H + GAP;
+  }
+
+  if (pinned) {
+    const scored = pinned.awayScore != null;
+    const text = scored
+      ? `${teamLabel(pinned.awayName, pinned.awayRank)} ${pinned.awayScore}  -  ${teamLabel(pinned.homeName, pinned.homeRank)} ${pinned.homeScore}`
+      : `${teamLabel(pinned.awayName, pinned.awayRank)} at ${teamLabel(pinned.homeName, pinned.homeRank)}`;
+    const right = [scored ? pinned.clockText : fmtTime(pinned.when, tz), abbrevNetwork(pinned.network)].filter(Boolean).join('  |  ');
+    cmds.push(await pinBar(text, right, y, measure));
+    y += m.pinBarH + GAP;
+  }
+
+  const rest = featured.slice(MAX_CARDS);
+  const footerFinals = finalsOnly ? [] : finals;
+  const needsFooter = (hiddenLive) => hiddenLive > 0 || footerFinals.length > 0;
+  let bottom = SCREEN_H - PAD_Y - (needsFooter(rest.length) ? FOOTER_H : 0);
+  const nRows = Math.max(0, Math.min(rest.length, Math.floor((bottom - y) / m.rowPitch12)));
+  const hiddenLive = rest.length - nRows;
+  bottom = SCREEN_H - PAD_Y - (needsFooter(hiddenLive) ? FOOTER_H : 0);
+  for (const [k, g] of rest.slice(0, nRows).entries()) cmds.push(...(await rowOps(g, y + k * m.rowPitch12, m, measure, eyes)));
+  if (nRows) y += nRows * m.rowPitch12 + GAP;
+
+  if (hiddenLive === 0 && upcoming.length) {
+    const fit = Math.max(0, Math.floor((bottom - y - m.tableHeaderH12) / m.rowPitch12));
+    const ups = [...upcoming].sort((a, b) => stakesOf(b) - stakesOf(a)).slice(0, fit).sort((a, b) => a.when - b.when);
+    if (ups.length) {
+      const labels = await fitLabels(ups.map((g) => `${teamLabel(g.awayName, g.awayRank)} at ${teamLabel(g.homeName, g.homeRank)}`), W - 210 - 16, BODY, false, measure);
+      cmds.push({ op: 'table', x: PAD_X, y, w: W, columns: ['Up next', 'TV', 'Kick'], widths: [0, 100, 110], align: ['left', 'left', 'right'],
+        size: BODY, lines: true, rows: ups.map((g, i) => [labels[i], abbrevNetwork(g.network), fmtTime(g.when, tz)]) });
+    }
+  }
+
+  const foot = [];
+  if (hiddenLive) foot.push(`+${hiddenLive} more live`);
+  if (footerFinals.length) {
+    const notable = [...footerFinals].sort((a, b) => (b.alert === 'upset') - (a.alert === 'upset') || rankWeight(b) - rankWeight(a));
+    foot.push('Final: ' + notable.map((g) => `${teamLabel(g.awayName, g.awayRank)} ${g.awayScore}, ${teamLabel(g.homeName, g.homeRank)} ${g.homeScore}`).join('  |  '));
+  }
+  if (foot.length) cmds.push(footerOp(foot.join('   |   ')));
+
+  const liveCount = live.length + (pinned?.state === 'in' ? 1 : 0);
+  cmds.push(volatileHeaderText(`${fmtTime(ctx.now, tz)}  |  ${finalsOnly && !liveCount ? 'Final' : `${liveCount} live`}`, m.headerH));
+  return cmds;
+}
+
+async function cardOps(g, x, y, cardW, m, measure, eyes) {
+  const ix = x + 12, iw = cardW - 24;
+  const nameW = iw - m.scoreW - 6;
+  const [awayL, homeL] = await fitLabels([teamLabel(g.awayName, g.awayRank), teamLabel(g.homeName, g.homeRank)], nameW, BODY, true, measure);
+  const ops = [{ op: 'rect', x, y, w: cardW, h: CARD_H, color: 'white', stroke: 'black', strokeWidth: 2, radius: 8 }];
+  let tx = ix;
+  if (g.alert) { ops.push(alertOp(g.alert, ix, y + 9, 24, eyes)); tx = ix + 32; }
+  ops.push(
+    { op: 'text', x: tx, y: y + 8, w: 120, h: 26, text: abbrevNetwork(g.network), size: TINY, valign: 'middle', maxLines: 1 },
+    { op: 'text', x: ix, y: y + 8, w: iw, h: 26, text: g.clockText, size: BODY, bold: true, align: 'right', valign: 'middle' },
+  );
+  for (const [i, [label, score, other]] of [[awayL, g.awayScore, g.homeScore], [homeL, g.homeScore, g.awayScore]].entries()) {
+    const ry = y + 36 + i * 46, bold = score > other;
+    ops.push(
+      { op: 'text', x: ix, y: ry, w: nameW, h: 46, text: label, size: BODY, bold, valign: 'middle', maxLines: 1 },
+      { op: 'text', x: ix + iw - m.scoreW, y: ry, w: m.scoreW, h: 48, text: String(score ?? ''), size: 24, bold, align: 'right', valign: 'middle' },
+    );
+  }
+  return ops;
+}
+
+async function rowOps(g, y, m, measure, eyes) {
+  const rowH = m.rowPitch12;
+  const nameW = Math.floor((W - ALERT_W - NET_W - m.clockW) / 2);
+  const [awayL, homeL] = await fitLabels(
+    [`${teamLabel(g.awayName, g.awayRank)} ${g.awayScore}`, `${teamLabel(g.homeName, g.homeRank)} ${g.homeScore}`], nameW - 8, BODY, true, measure);
+  const ops = [{ op: 'line', x0: PAD_X, y0: y + rowH, x1: PAD_X + W, y1: y + rowH }];
+  if (g.alert) ops.push(alertOp(g.alert, PAD_X, y + 6, 20, eyes));
+  ops.push(
+    { op: 'text', x: PAD_X + ALERT_W, y, w: nameW - 8, h: rowH, text: awayL, size: BODY, bold: g.awayScore > g.homeScore, valign: 'middle', maxLines: 1 },
+    { op: 'text', x: PAD_X + ALERT_W + nameW, y, w: nameW - 8, h: rowH, text: homeL, size: BODY, bold: g.homeScore > g.awayScore, valign: 'middle', maxLines: 1 },
+    { op: 'text', x: PAD_X + ALERT_W + 2 * nameW, y, w: NET_W, h: rowH, text: abbrevNetwork(g.network), size: TINY, valign: 'middle', maxLines: 1 },
+    { op: 'text', x: PAD_X, y, w: W, h: rowH, text: g.clockText, size: BODY, align: 'right', valign: 'middle' },
+  );
+  return ops;
+}

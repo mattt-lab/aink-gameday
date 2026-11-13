@@ -62,9 +62,12 @@ export function buildGames(current, espnEvents = []) {
   }).sort((a, b) => a.when - b.when);
 }
 
-/** Final, postponed/cancelled, or (with no ESPN status at all) kicked off more than 6 h ago. */
+/**
+ * Final, postponed/cancelled, or not in progress and kicked off more than 6 h ago (no ESPN status, or a
+ * stale/stuck "pre" one -- either way it must not pin the screen to an old day).
+ */
 export function isDone(g, now) {
-  return g.completed || g.dead || (!g.hasEspn && now - g.when > SIX_HOURS);
+  return g.completed || g.dead || (g.state !== 'in' && now - g.when > SIX_HOURS);
 }
 
 export function gamesOn(games, date, tz) {

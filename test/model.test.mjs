@@ -76,6 +76,11 @@ test('pickView: no ESPN status and kicked off 7h ago counts as done', () => {
   assert.equal(isDone(g, new Date('2026-11-14T05:00Z')), false);
 });
 
+test('pickView: a stale ESPN "pre" status 6h+ after kickoff does not pin the day', () => {
+  const games = buildGames(current(), events()); // Friday events still say 'pre'
+  assert.deepEqual(pickView(games, new Date('2026-11-14T16:40Z'), TZ), { kind: 'day', date: '2026-11-14', mode: 'upnext' });
+});
+
 test('pickView: postponed game does not pin the day', () => {
   const evs = setEvent(events(), idOf('florida-state'), { type: { state: 'post', completed: false, name: 'STATUS_POSTPONED' } });
   const games = buildGames(current(), evs);
