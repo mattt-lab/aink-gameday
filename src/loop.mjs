@@ -17,8 +17,8 @@ export const CADENCE = {
   liveRedrawMs: 2 * MIN,
   soonMs: 15 * MIN,
 };
-// TODO(partial refresh): test refresh:'partial' on this panel; if it doesn't ghost, use it for live
-// redraws (with a full refresh every 10th draw) and drop liveRedrawMs to one tick. Full only for now.
+// Partial refresh was tested on this panel (aink-7.5, firmware 261016) on 2026-11-13: the device accepts
+// refresh:'partial' but still does a full ~4.5 s flashing refresh, so full refresh + the 2-minute live limit stays.
 const REFRESH = 'full';
 
 /**
