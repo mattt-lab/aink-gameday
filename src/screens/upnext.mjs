@@ -3,7 +3,8 @@ import { gamesOn, isDone } from '../model.mjs';
 import { stakesOf, abbrevNetwork } from '../rank.mjs';
 import { colWidth } from '../metrics.mjs';
 import { fmtTime, fmtDayTitle, localDate, localHour } from '../time.mjs';
-import { PAD_X, PAD_Y, GAP, W, SCREEN_H, BODY, teamLabel, fitLabels, volatileHeaderText, footerOp } from './common.mjs';
+import { PAD_X, PAD_Y, GAP, W, SCREEN_H, BODY, volatileHeaderText, footerOp } from './common.mjs';
+import { matchupSegs, tableOps } from './rich.mjs';
 
 const FOOTER_RESERVE = GAP + 20;
 
@@ -26,16 +27,16 @@ export async function buildUpNext(games, ctx) {
   const kicks = shown.map((g) => fmtTime(g.when, tz));
   const nets = shown.map((g) => abbrevNetwork(g.network));
   const [kickW, tvW] = await Promise.all([colWidth({ measure }, ['Kick', ...kicks], BODY, true), colWidth({ measure }, ['TV', ...nets], BODY, true)]);
-  const matchupW = W - kickW - tvW - 16;
-  const matchups = await fitLabels(shown.map((g) => `${teamLabel(g.awayName, g.awayRank)} at ${teamLabel(g.homeName, g.homeRank)}`), matchupW, BODY, false, measure);
 
   const cmds = [
     { op: 'clear' },
     { op: 'header', x: PAD_X, y: PAD_Y, w: W, title: 'Gameday - Up Next', subtitle: fmtDayTitle(first, tz) + tonight, icon: 'calendar' },
   ];
   if (shown.length) {
-    cmds.push({ op: 'table', x: PAD_X, y: tableTop, w: W, columns: ['Kick', 'Matchup', 'TV'], widths: [kickW, 0, tvW], size: BODY, lines: true,
-      rows: shown.map((g, i) => [kicks[i], matchups[i], nets[i]]) });
+    const t = await tableOps({ x: PAD_X, y: tableTop, w: W, rowH: m.rowPitch12,
+      columns: [{ title: 'Kick', width: kickW }, { title: 'Matchup' }, { title: 'TV', width: tvW }],
+      rows: shown.map((g, i) => [kicks[i], matchupSegs(g), nets[i]]) }, measure);
+    cmds.push(...t.ops);
   } else {
     cmds.push({ op: 'text', x: PAD_X, y: tableTop + 20, w: W, text: 'No more games today', size: 18, align: 'center' });
   }

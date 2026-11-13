@@ -3,7 +3,8 @@
 import { TIGHT_GAME_MAX_MARGIN } from '../alerts.mjs';
 import { upsetSize } from '../rank.mjs';
 import { fmtTime } from '../time.mjs';
-import { PAD_X, PAD_Y, GAP, W, SCREEN_H, BODY, teamLabel, fitLabels, volatileHeaderText, alertOp, pinBar } from './common.mjs';
+import { PAD_X, PAD_Y, GAP, W, SCREEN_H, volatileHeaderText, alertOp } from './common.mjs';
+import { teamSegs, tableOps, pinBarOps } from './rich.mjs';
 
 const rankWeight = (g) => [g.awayRank, g.homeRank].reduce((s, r) => s + (r ? 26 - r : 0), 0);
 const margin = (g) => Math.abs(g.awayScore - g.homeScore);
@@ -23,8 +24,8 @@ export async function buildReview(games, ctx) {
   const cmds = [{ op: 'clear' }, { op: 'header', x: PAD_X, y: PAD_Y, w: W, title: `Week ${ctx.week} in Review`, subtitle: 'Next slate when CFB HQ updates', icon: 'star' }];
   let y = PAD_Y + m.headerSubH + GAP;
   if (pinned) {
-    const text = `${teamLabel(pinned.awayName, pinned.awayRank)} ${pinned.awayScore}  -  ${teamLabel(pinned.homeName, pinned.homeRank)} ${pinned.homeScore}`;
-    cmds.push(await pinBar(text, 'Final', y, measure));
+    const segs = [...teamSegs(pinned.awayName, pinned.awayRank, ` ${pinned.awayScore}  -  `), ...teamSegs(pinned.homeName, pinned.homeRank, ` ${pinned.homeScore}`)];
+    cmds.push(...(await pinBarOps(segs, 'Final', { x: PAD_X, y, w: W, h: m.pinBarH }, measure)));
     y += m.pinBarH + GAP;
   }
 
@@ -38,8 +39,16 @@ export async function buildReview(games, ctx) {
 
   for (const [title, list, n, alert] of [['Upsets', upsets, nu, 'upset'], ['Close finishes', close, nc, 'tight']]) {
     if (!n) continue;
-    const rows = await rowsFor(list.slice(0, n), measure);
-    cmds.push({ op: 'table', x: PAD_X, y, w: W, columns: [title, '', ''], widths: [0, 0, 80], align: ['left', 'left', 'right'], size: BODY, lines: true, rows });
+    const t = await tableOps({ x: PAD_X, y, w: W, rowH: m.rowPitch12,
+      columns: [{ title }, { title: '', width: 90, align: 'right' }],
+      rows: list.slice(0, n).map((g) => {
+        const awayWon = g.awayScore > g.homeScore;
+        return [
+          [...teamSegs(g.awayName, g.awayRank, '', awayWon), { text: ' at ', bold: false }, ...teamSegs(g.homeName, g.homeRank, '', !awayWon)],
+          `${g.awayScore}-${g.homeScore}`,
+        ];
+      }) }, measure);
+    cmds.push(...t.ops);
     cmds.push(alertOp(alert, PAD_X + W - 30, y + 6, 20, eyes));
     y += tableH(n) + GAP;
   }
@@ -49,8 +58,3 @@ export async function buildReview(games, ctx) {
   return cmds;
 }
 
-async function rowsFor(list, measure) {
-  const colW = Math.floor((W - 80) / 2) - 16;
-  const labels = await fitLabels(list.flatMap((g) => [`${teamLabel(g.awayName, g.awayRank)} ${g.awayScore}`, `${teamLabel(g.homeName, g.homeRank)} ${g.homeScore}`]), colW, BODY, false, measure);
-  return list.map((g, i) => [labels[2 * i], labels[2 * i + 1], `by ${margin(g)}`]);
-}

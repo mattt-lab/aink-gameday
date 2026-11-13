@@ -4,7 +4,8 @@
 import { gamesOn, isDone } from '../model.mjs';
 import { interest, stakesOf, abbrevNetwork } from '../rank.mjs';
 import { fmtTime } from '../time.mjs';
-import { PAD_X, PAD_Y, GAP, W, SCREEN_H, TINY, BODY, FOOTER_H, teamLabel, fitLabels, volatileHeaderText, footerOp, alertOp, pinBar } from './common.mjs';
+import { PAD_X, PAD_Y, GAP, W, SCREEN_H, TINY, BODY, FOOTER_H, teamLabel, volatileHeaderText, footerOp, alertOp } from './common.mjs';
+import { teamSegs, matchupSegs, richOps, tableOps, pinBarOps } from './rich.mjs';
 
 const CARD_H = 134, CARD_GAP = 10, MAX_CARDS = 3;
 const ALERT_W = 28, NET_W = 90;
@@ -38,11 +39,11 @@ export async function buildLive(games, ctx) {
 
   if (pinned) {
     const scored = pinned.awayScore != null;
-    const text = scored
-      ? `${teamLabel(pinned.awayName, pinned.awayRank)} ${pinned.awayScore}  -  ${teamLabel(pinned.homeName, pinned.homeRank)} ${pinned.homeScore}`
-      : `${teamLabel(pinned.awayName, pinned.awayRank)} at ${teamLabel(pinned.homeName, pinned.homeRank)}`;
+    const segs = scored
+      ? [...teamSegs(pinned.awayName, pinned.awayRank, ` ${pinned.awayScore}  -  `), ...teamSegs(pinned.homeName, pinned.homeRank, ` ${pinned.homeScore}`)]
+      : matchupSegs(pinned);
     const right = [scored ? pinned.clockText : fmtTime(pinned.when, tz), abbrevNetwork(pinned.network)].filter(Boolean).join('  |  ');
-    cmds.push(await pinBar(text, right, y, measure));
+    cmds.push(...(await pinBarOps(segs, right, { x: PAD_X, y, w: W, h: m.pinBarH }, measure)));
     y += m.pinBarH + GAP;
   }
 
@@ -56,10 +57,11 @@ export async function buildLive(games, ctx) {
     const fit = Math.max(0, Math.floor((bottom - y - m.tableHeaderH12) / m.rowPitch12));
     const ups = [...upcoming].sort((a, b) => stakesOf(b) - stakesOf(a)).slice(0, fit).sort((a, b) => a.when - b.when);
     if (!ups.length) return;
-    const labels = await fitLabels(ups.map((g) => `${teamLabel(g.awayName, g.awayRank)} at ${teamLabel(g.homeName, g.homeRank)}`), W - 210 - 16, BODY, false, measure);
-    cmds.push({ op: 'table', x: PAD_X, y, w: W, columns: ['Up next', 'TV', 'Kick'], widths: [0, 100, 110], align: ['left', 'left', 'right'],
-      size: BODY, lines: true, rows: ups.map((g, i) => [labels[i], abbrevNetwork(g.network), fmtTime(g.when, tz)]) });
-    y += m.tableHeaderH12 + ups.length * m.rowPitch12 + GAP;
+    const t = await tableOps({ x: PAD_X, y, w: W, rowH: m.rowPitch12,
+      columns: [{ title: 'Up next' }, { title: 'TV', width: 100 }, { title: 'Kick', width: 110, align: 'right' }],
+      rows: ups.map((g) => [matchupSegs(g), abbrevNetwork(g.network), fmtTime(g.when, tz)]) }, measure);
+    cmds.push(...t.ops);
+    y += t.height + GAP;
   };
 
   const foot = [];
@@ -95,7 +97,6 @@ export async function buildLive(games, ctx) {
 async function cardOps(g, x, y, cardW, m, measure, eyes) {
   const ix = x + 12, iw = cardW - 24;
   const nameW = iw - m.scoreW - 6;
-  const [awayL, homeL] = await fitLabels([teamLabel(g.awayName, g.awayRank), teamLabel(g.homeName, g.homeRank)], nameW, BODY, true, measure);
   const ops = [{ op: 'rect', x, y, w: cardW, h: CARD_H, color: 'white', stroke: 'black', strokeWidth: 2, radius: 8 }];
   let tx = ix;
   if (g.alert) { ops.push(alertOp(g.alert, ix, y + 9, 24, eyes)); tx = ix + 32; }
@@ -103,10 +104,10 @@ async function cardOps(g, x, y, cardW, m, measure, eyes) {
     { op: 'text', x: tx, y: y + 8, w: 120, h: 26, text: abbrevNetwork(g.network), size: TINY, valign: 'middle', maxLines: 1 },
     { op: 'text', x: ix, y: y + 8, w: iw, h: 26, text: g.clockText, size: BODY, bold: true, align: 'right', valign: 'middle' },
   );
-  for (const [i, [label, score, other]] of [[awayL, g.awayScore, g.homeScore], [homeL, g.homeScore, g.awayScore]].entries()) {
+  for (const [i, [name, rank, score, other]] of [[g.awayName, g.awayRank, g.awayScore, g.homeScore], [g.homeName, g.homeRank, g.homeScore, g.awayScore]].entries()) {
     const ry = y + 36 + i * 46, bold = score > other;
     ops.push(
-      { op: 'text', x: ix, y: ry, w: nameW, h: 46, text: label, size: BODY, bold, valign: 'middle', maxLines: 1 },
+      ...(await richOps(teamSegs(name, rank), { x: ix, y: ry, w: nameW, h: 46, bold }, measure)),
       { op: 'text', x: ix + iw - m.scoreW, y: ry, w: m.scoreW, h: 48, text: String(score ?? ''), size: 24, bold, align: 'right', valign: 'middle' },
     );
   }
@@ -116,13 +117,11 @@ async function cardOps(g, x, y, cardW, m, measure, eyes) {
 async function rowOps(g, y, m, measure, eyes) {
   const rowH = m.rowPitch12;
   const nameW = Math.floor((W - ALERT_W - NET_W - m.clockW) / 2);
-  const [awayL, homeL] = await fitLabels(
-    [`${teamLabel(g.awayName, g.awayRank)} ${g.awayScore}`, `${teamLabel(g.homeName, g.homeRank)} ${g.homeScore}`], nameW - 8, BODY, true, measure);
   const ops = [{ op: 'line', x0: PAD_X, y0: y + rowH, x1: PAD_X + W, y1: y + rowH }];
   if (g.alert) ops.push(alertOp(g.alert, PAD_X, y + 6, 20, eyes));
   ops.push(
-    { op: 'text', x: PAD_X + ALERT_W, y, w: nameW - 8, h: rowH, text: awayL, size: BODY, bold: g.awayScore > g.homeScore, valign: 'middle', maxLines: 1 },
-    { op: 'text', x: PAD_X + ALERT_W + nameW, y, w: nameW - 8, h: rowH, text: homeL, size: BODY, bold: g.homeScore > g.awayScore, valign: 'middle', maxLines: 1 },
+    ...(await richOps(teamSegs(g.awayName, g.awayRank, ` ${g.awayScore}`), { x: PAD_X + ALERT_W, y, w: nameW - 8, h: rowH, bold: g.awayScore > g.homeScore }, measure)),
+    ...(await richOps(teamSegs(g.homeName, g.homeRank, ` ${g.homeScore}`), { x: PAD_X + ALERT_W + nameW, y, w: nameW - 8, h: rowH, bold: g.homeScore > g.awayScore }, measure)),
     { op: 'text', x: PAD_X + ALERT_W + 2 * nameW, y, w: NET_W, h: rowH, text: abbrevNetwork(g.network), size: TINY, valign: 'middle', maxLines: 1 },
     { op: 'text', x: PAD_X, y, w: W, h: rowH, text: g.clockText, size: BODY, align: 'right', valign: 'middle' },
   );

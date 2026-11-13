@@ -21,7 +21,7 @@ async function screen(nowIso, scoresFile, overrides = {}) {
   const view = pickView(games, now, TZ);
   const { commands, hash } = await buildView(games, view, { now, tz: TZ, pinnedTeam: 'washington', week: 11, metrics, measure, updatedAt: now });
   const texts = commands.filter((c) => c.op === 'text').map((c) => c.text);
-  return { view, commands, hash, texts, tables: commands.filter((c) => c.op === 'table'), json: JSON.stringify(stripMeta(commands)) };
+  return { view, commands, hash, texts, tables: commands.filter((c) => c._table).map((c) => c._table), bar: commands.find((c) => c._pinBar)?._pinBar, json: JSON.stringify(stripMeta(commands)) };
 }
 
 test("upnext Saturday shows 9 rows in kickoff order, footer '+N lower-stakes games hidden'", async () => {
@@ -48,15 +48,14 @@ test("upnext Friday shows 3 rows, no footer, subtitle ends '(Tonight)' after 4 P
 
 test('upnext never contains a pinned-team box', async () => {
   const s = await screen('2026-11-14T16:40:00Z');
-  assert.ok(!s.commands.some((c) => c.op === 'box'));
+  assert.equal(s.bar, undefined);
 });
 
 test("live Saturday: 3 cards, a pinned bar containing 'Washington 7', footer starts '+'", async () => {
   const s = await screen('2026-11-14T21:47:00Z', 'scores-sat-1447.json');
   assert.equal(s.view.mode, 'live');
   assert.equal(s.commands.filter((c) => c.op === 'rect' && c.h === 134).length, 3);
-  const bar = s.commands.find((c) => c.op === 'box');
-  assert.match(bar.children[1].text, /^Washington 7/);
+  assert.match(s.bar.text, /^Washington 7/);
   assert.match(s.texts.find((t) => /more live/.test(t)), /^\+\d+ more live/);
 });
 
@@ -64,8 +63,7 @@ test("live: pinned bar stays and reads 'Final' when UW is final but other games 
   const s = await screen('2026-11-14T21:47:00Z', 'scores-sat-1447.json', {
     games: (gs) => gs.map((g) => (g.away === 'washington' ? { ...g, state: 'post', completed: true, status: 'final', clockText: 'Final' } : g)),
   });
-  const bar = s.commands.find((c) => c.op === 'box');
-  assert.match(bar.children[2].text, /^Final/);
+  assert.match(s.bar.right, /^Final/);
 });
 
 test('live Friday: 2 cards, an Up next table with Houston, no footer', async () => {
@@ -78,7 +76,7 @@ test('live Friday: 2 cards, an Up next table with Houston, no footer', async () 
 
 test('live: every card and row contains its network text', async () => {
   const s = await screen('2026-11-14T21:47:00Z', 'scores-sat-1447.json');
-  const tiny = s.commands.filter((c) => c.op === 'text' && c.size === 9 && c.w <= 120).map((c) => c.text);
+  const tiny = s.commands.filter((c) => c.op === 'text' && c.size === 9 && c.w <= 120 && c.text !== '#').map((c) => c.text);
   // 3 cards + 5 rows on this fixture, each with a network
   assert.equal(tiny.length, 8);
   assert.ok(tiny.every((t) => t.length > 0));
@@ -103,9 +101,9 @@ test("review: Upsets and Close finishes tables, pinned bar 'Final', no bar on a 
   const s = await screen('2026-11-16T19:00:00Z', 'scores-week-final.json');
   assert.deepEqual(s.view, { kind: 'review' });
   assert.deepEqual(s.tables.map((t) => t.columns[0]), ['Upsets', 'Close finishes']);
-  assert.equal(s.commands.find((c) => c.op === 'box').children[2].text, 'Final');
+  assert.equal(s.bar.right, 'Final');
   const bye = await screen('2026-11-16T19:00:00Z', 'scores-week-final.json', { games: (gs) => gs.filter((g) => g.away !== 'washington' && g.home !== 'washington') });
-  assert.ok(!bye.commands.some((c) => c.op === 'box'));
+  assert.equal(bye.bar, undefined);
 });
 
 test('hashCommands ignores the Updated text', async () => {
@@ -138,4 +136,28 @@ test('live: only Washington live, the rest final, two still to kick off -> Up ne
   assert.ok(up, 'up next table present');
   assert.equal(up.rows.length, 2);
   assert.match(s.texts.find((t) => /live$/.test(t)), /1 live$/);
+});
+
+test("ranked teams get a tiny '#' (size 9) right before the rank number", async () => {
+  const s = await screen('2026-11-14T02:40:00Z', 'scores-fri-1940.json');
+  const i = s.commands.findIndex((c) => c.op === 'text' && c.text === '#');
+  assert.ok(i >= 0);
+  assert.equal(s.commands[i].size, 9);
+  assert.match(s.commands[i + 1].text, /^4 UCLA/);
+  assert.equal(s.tables[0].rows[0][0], '#14 Houston at Colorado');
+});
+
+test('review rows read "away at home" with the score away-home and the winner bold', async () => {
+  const s = await screen('2026-11-16T19:00:00Z', 'scores-week-final.json');
+  const upsets = s.tables.find((t) => t.columns[0] === 'Upsets');
+  assert.deepEqual(upsets.rows[0], ['#22 Missouri at #1 Georgia', '13-10']);
+  const missouri = s.commands.find((c) => c.op === 'text' && c.text === '22 Missouri');
+  const georgia = s.commands.find((c) => c.op === 'text' && c.text === '1 Georgia');
+  assert.equal(missouri.bold, true);
+  assert.equal(georgia.bold, false);
+});
+
+test('no internal _ keys reach the device', async () => {
+  const s = await screen('2026-11-16T19:00:00Z', 'scores-week-final.json');
+  assert.ok(!/"_(table|pinBar|volatile)"/.test(s.json));
 });
