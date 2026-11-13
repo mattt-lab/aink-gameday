@@ -1,4 +1,4 @@
-// MIRRORED FROM cfb-top25-tracker: src/data/teams.js (gameAlert, underdogOf + constants) and src/utils/spread.js (parseSpread). When those change, re-port here and re-run tests. Ported 2026-11-13 from commit 6678d6b.
+// MIRRORED FROM cfb-top25-tracker: src/data/teams.js (gameAlert, underdogOf + constants) and src/utils/spread.js (parseSpread). When those change, re-port here and re-run tests. Ported 2026-11-13 from commit 6678d6b (sync notes added in 520a709).
 
 // Pure parser for CFBD's pre-formatted betting-line string (e.g. "Ohio State -6.5"). There is no
 // structured numeric field for the line, just this string (see fetch-cfb-data.mjs's spread
