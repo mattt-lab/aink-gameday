@@ -1,0 +1,93 @@
+// Joins CFB HQ's current.json (schedule, names, ranks, spread, stakes) with ESPN scoreboard events
+// (live status, scores, clock) into one normalized Game list, and decides what the screen shows.
+import { gameAlert } from './alerts.mjs';
+import { localDate, localHour, addDays } from './time.mjs';
+
+const SIX_HOURS = 6 * 3600 * 1000;
+const DEAD = new Set(['STATUS_POSTPONED', 'STATUS_CANCELED', 'STATUS_CANCELLED', 'STATUS_FORFEIT']);
+
+const titleCase = (id) => id.split('-').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
+
+function clockTextOf(ev) {
+  const st = ev.status, type = st.type;
+  if (type.state === 'pre') return '';
+  if (type.state === 'post') return type.completed ? 'Final' : '';
+  if (type.name === 'STATUS_HALFTIME') return 'Half';
+  const p = st.period;
+  if (p >= 5) return p === 5 ? 'OT' : `${p - 4}OT`;
+  if (type.name === 'STATUS_END_PERIOD') return `End ${p}Q`;
+  return `${p}Q ${st.displayClock}`;
+}
+
+/**
+ * @returns {Game[]} one per current.allGames entry, kickoff order.
+ * Game = {id, away, home, awayName, homeName, awayRank, homeRank, when, network, spread, stakes,
+ *         state, completed, dead, hasEspn, awayScore, homeScore, period, clockText, status, alert}
+ */
+export function buildGames(current, espnEvents = []) {
+  const byId = new Map(espnEvents.map((e) => [String(e.id), e]));
+  const stakes = new Map();
+  for (const g of [...(current.games ?? []), ...(current.rankedNextGames ?? [])]) {
+    if (g.stakesScore != null) stakes.set(g.cfbdId, g.stakesScore);
+  }
+  const teams = current.teams ?? {};
+  return current.allGames.map((g) => {
+    const ev = byId.get(String(g.cfbdId));
+    const comp = ev?.competitions?.[0];
+    const side = (ha) => comp?.competitors?.find((c) => c.homeAway === ha);
+    const name = (id, ha) => teams[id]?.name ?? side(ha)?.team?.location ?? titleCase(id);
+    const type = ev?.status?.type;
+    const state = type?.state ?? 'pre';
+    const completed = !!type?.completed;
+    const dead = !!type && DEAD.has(type.name);
+    const live = state === 'in' || (state === 'post' && completed);
+    const score = (ha) => (live && side(ha)?.score != null ? Number(side(ha).score) : null);
+    const status = state === 'in' ? 'in_progress' : state === 'post' && completed ? 'final' : 'scheduled';
+    const game = {
+      id: String(g.cfbdId), away: g.away, home: g.home,
+      awayName: name(g.away, 'away'), homeName: name(g.home, 'home'),
+      awayRank: g.awayRank ?? null, homeRank: g.homeRank ?? null,
+      when: new Date(g.when), network: g.network ?? null, spread: g.spread ?? null,
+      stakes: stakes.get(g.cfbdId) ?? null,
+      state, completed, dead, hasEspn: !!ev,
+      awayScore: score('away'), homeScore: score('home'),
+      period: ev?.status?.period ?? null, clockText: ev ? clockTextOf(ev) : '', status,
+    };
+    game.alert = gameAlert({
+      status, period: game.period, awayRank: game.awayRank, homeRank: game.homeRank,
+      awayTeam: { name: game.awayName }, homeTeam: { name: game.homeName },
+      awayScore: game.awayScore, homeScore: game.homeScore, spread: game.spread,
+    });
+    return game;
+  }).sort((a, b) => a.when - b.when);
+}
+
+/** Final, postponed/cancelled, or (with no ESPN status at all) kicked off more than 6 h ago. */
+export function isDone(g, now) {
+  return g.completed || g.dead || (!g.hasEspn && now - g.when > SIX_HOURS);
+}
+
+export function gamesOn(games, date, tz) {
+  return games.filter((g) => localDate(g.when, tz) === date);
+}
+
+/**
+ * What the screen shows:
+ *  1. any game in progress -> that game's day, live
+ *  2. every game of the "hold day" is done and it's before 4:00 AM the next morning -> that day, live (finals)
+ *  3. the earliest game not done -> its day, live if any game that day is in progress, else upnext
+ *  4. nothing left -> week in review
+ */
+export function pickView(games, now, tz) {
+  const inProgress = games.find((g) => g.state === 'in' && !g.dead);
+  if (inProgress) return { kind: 'day', date: localDate(inProgress.when, tz), mode: 'live' };
+
+  const today = localDate(now, tz);
+  const holdDay = localHour(now, tz) < 4 ? addDays(today, -1) : today;
+  const held = gamesOn(games, holdDay, tz).filter((g) => !g.dead);
+  if (held.length && held.every((g) => isDone(g, now))) return { kind: 'day', date: holdDay, mode: 'live' };
+
+  const next = games.find((g) => !isDone(g, now));
+  if (next) return { kind: 'day', date: localDate(next.when, tz), mode: 'upnext' };
+  return { kind: 'review' };
+}
