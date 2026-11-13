@@ -48,6 +48,7 @@ export function buildGames(current, espnEvents = []) {
     const game = {
       id: String(g.cfbdId), away: g.away, home: g.home,
       awayName: name(g.away, 'away'), homeName: name(g.home, 'home'),
+      awayAbbr: side('away')?.team?.abbreviation ?? null, homeAbbr: side('home')?.team?.abbreviation ?? null,
       awayRank: g.awayRank ?? null, homeRank: g.homeRank ?? null,
       when: new Date(g.when), network: g.network ?? null, spread: g.spread ?? null,
       stakes: stakes.get(g.cfbdId) ?? null,

@@ -178,9 +178,10 @@ test('top25: 25 ranked teams in two columns, losses bold with fire, no pinned ba
 });
 
 test('top25: resultFor reports bye and unfinished games', () => {
-  assert.deepEqual(resultFor('nobody', []), { text: 'Bye', lost: false });
-  assert.deepEqual(resultFor('a', [{ away: 'a', home: 'b', completed: false, awayScore: null }]), { text: '-', lost: false });
-  assert.deepEqual(resultFor('b', [{ away: 'a', home: 'b', completed: true, awayScore: 20, homeScore: 17 }]), { text: 'L 17-20', lost: true });
+  assert.deepEqual(resultFor('nobody', []), { text: 'Bye', lost: false, opponent: '' });
+  const g = { away: 'a', home: 'b', awayName: 'Alpha', homeName: 'Beta', awayAbbr: 'ALP', homeAbbr: 'BET', awayRank: 7, homeRank: null };
+  assert.deepEqual(resultFor('a', [{ ...g, completed: false, awayScore: null }]), { text: '-', lost: false, opponent: 'at BET' });
+  assert.deepEqual(resultFor('b', [{ ...g, completed: true, awayScore: 20, homeScore: 17 }]), { text: 'L 17-20', lost: true, opponent: 'vs #7 ALP' });
 });
 
 test('review pages alternate every 5 minutes', () => {
@@ -189,4 +190,13 @@ test('review pages alternate every 5 minutes', () => {
   const b = withReviewPage(v, new Date('2026-11-16T19:05:00Z')).page;
   assert.notEqual(a, b);
   assert.deepEqual(withReviewPage({ kind: 'day', date: 'x', mode: 'live' }, new Date()), { kind: 'day', date: 'x', mode: 'live' });
+});
+
+test('top25: no subtitle; opponents drawn in the tiny pixel font', async () => {
+  const { current, events } = loadFixture(DIR, { scoresFile: 'scores-week-final.json' });
+  const games = buildGames(current, events);
+  const now = new Date('2026-11-16T19:00:00Z');
+  const { commands } = await buildView(games, { kind: 'review', page: 'top25' }, { now, tz: TZ, pinnedTeam: 'washington', ...weekContext(current), metrics, measure, updatedAt: now });
+  assert.equal(commands.find((c) => c.op === 'header').subtitle, undefined);
+  assert.ok(commands.filter((c) => c.op === 'raw_bitmap').length >= 15);
 });

@@ -26,7 +26,7 @@ const REFRESH = 'full';
  */
 export function createLoop({ config, device, fetchFn = fetch, clock = () => new Date() }) {
   const tz = config.timeZone;
-  const s = { current: null, currentAt: 0, espn: new Map(), metrics: null, lastHash: null, lastViewKey: null, lastDrawAt: 0, needsDraw: true, dataAt: null };
+  const s = { lastUptime: null, current: null, currentAt: 0, espn: new Map(), metrics: null, lastHash: null, lastViewKey: null, lastDrawAt: 0, needsDraw: true, dataAt: null };
 
   const allEvents = () => {
     const byId = new Map();
@@ -103,6 +103,12 @@ export function createLoop({ config, device, fetchFn = fetch, clock = () => new 
     const done = (r) => ({ ...r, games: shown });
 
     try {
+      // A rebooted device shows its own "AInk Ready" screen; uptime going backwards means redraw now.
+      if (device.health) {
+        const h = await device.health();
+        if (s.lastUptime != null && h.uptime_ms < s.lastUptime) { s.needsDraw = true; errors.push('device restarted; redrawing'); }
+        s.lastUptime = h.uptime_ms;
+      }
       s.metrics ??= await measureMetrics(device);
     } catch (e) {
       errors.push(e.message);

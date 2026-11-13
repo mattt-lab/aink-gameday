@@ -3,6 +3,7 @@
 // Also a table drawn the same way (the device's own table op can't mix sizes inside a cell).
 import { shortName } from '../rank.mjs';
 import { BODY } from './common.mjs';
+import { tinyWidth, tinyTextOp, TINY_H } from '../tinyfont.mjs';
 
 const CAP = { 9: 12, 12: 17, 18: 25, 24: 33 }; // cap heights reported by the device's font list
 const HASH_GAP = 1;
@@ -30,14 +31,16 @@ export const plain = (segs) => segs.map((s) => s.text).join('');
  */
 export async function richOps(segs, { x, y, w, h, size = BODY, bold = false }, measure) {
   const smallSize = 9;
-  const sized = (list) => list.map((s) => ({ ...s, size: s.small ? smallSize : size }));
+  // small: size-9 top-aligned mark ('#'); note: 5x7 pixel-font trailing text (e.g. an opponent), centred
+  const sized = (list) => list.map((s) => ({ ...s, size: s.small || s.note ? smallSize : size }));
   let parts = sized(segs);
-  const weight = (p) => (p.small ? false : p.bold ?? bold);
-  let widths = (await measure(parts.map((p) => ({ text: p.text, size: p.size, bold: weight(p) })))).map((m) => m.width);
+  const weight = (p) => (p.small || p.note ? false : p.bold ?? bold);
+  const widthsOf = async (ps) => (await measure(ps.map((p) => ({ text: p.text, size: p.size, bold: weight(p) })))).map((m, i) => (ps[i].note ? tinyWidth(ps[i].text) + 6 : m.width));
+  let widths = await widthsOf(parts);
   const total = () => widths.reduce((a, b, i) => a + b + (parts[i].small ? HASH_GAP : 0), 0);
   if (total() > w) {
     parts = sized(segs.map((s) => (s.small ? s : { ...s, text: shortName(s.text) })));
-    widths = (await measure(parts.map((p) => ({ text: p.text, size: p.size, bold: weight(p) })))).map((m) => m.width);
+    widths = await widthsOf(parts);
   }
   const capTop = y + Math.round((h - CAP[size]) / 2);
   const ops = [];
@@ -45,7 +48,11 @@ export async function richOps(segs, { x, y, w, h, size = BODY, bold = false }, m
   for (const [i, p] of parts.entries()) {
     const room = x + w - cx;
     if (room <= 4) break;
-    if (p.small) {
+    if (p.note) {
+      // the pixel font has no ellipsis: show the note only if it fits completely
+      if (widths[i] <= room) ops.push(tinyTextOp(p.text.trim(), cx + 6, y + Math.round((h - TINY_H) / 2)));
+      cx += widths[i];
+    } else if (p.small) {
       ops.push({ op: 'text', x: cx, y: capTop, text: p.text, size: smallSize });
       cx += widths[i] + HASH_GAP;
     } else {

@@ -196,3 +196,16 @@ test('tick reports how many games are on the shown day', async () => {
   const h = harness();
   assert.equal((await h.loop.tick()).games, 3);
 });
+
+test('device reboot between ticks (uptime went backwards) -> redraw even though nothing changed', async () => {
+  const h = harness();
+  let uptime = 100000;
+  h.device.health = async () => ({ uptime_ms: uptime });
+  assert.equal((await h.loop.tick()).redrew, true);
+  h.advance(60); uptime += 60000;
+  assert.equal((await h.loop.tick()).reason, 'unchanged');
+  h.advance(60); uptime = 5000; // rebooted
+  const r = await h.loop.tick();
+  assert.equal(r.redrew, true);
+  assert.ok(r.errors.some((e) => /restarted/.test(e)));
+});
