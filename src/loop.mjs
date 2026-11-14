@@ -7,6 +7,8 @@ import { buildView, withReviewPage } from './render.mjs';
 import { stripMeta } from './screens/common.mjs';
 import { localDate, localHour, addDays, ymd, fmtTime } from './time.mjs';
 import { makeSnapshot, reviveSnapshot, loadSnapshot, saveSnapshot, chooseView } from './recap.mjs';
+import { writeFileSync, appendFileSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 const MIN = 60 * 1000;
 export const CADENCE = {
@@ -177,8 +179,24 @@ export function createLoop({ config, device, fetchFn = fetch, clock = () => new 
   return { tick };
 }
 
-/** Runs forever (Ctrl+C to stop), one console line per tick. */
-export async function runLoop({ config, device, log = console.log }) {
+/**
+ * A logger that prints to the console and to `path`, starting the file fresh (cleared) each run.
+ * File lines carry the date too, since a run spans days. File errors never stop the dashboard.
+ */
+export function createLog(path, tz, { print = console.log, clock = () => new Date() } = {}) {
+  let fileOk = !!path;
+  if (fileOk) {
+    try { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, ''); } catch { fileOk = false; }
+  }
+  return (line) => {
+    print(line);
+    if (!fileOk) return;
+    try { appendFileSync(path, `${localDate(clock(), tz)} ${line}\n`); } catch { /* keep running */ }
+  };
+}
+
+/** Runs forever (Ctrl+C to stop), one line per tick to the console and the log file. */
+export async function runLoop({ config, device, log = createLog(config.logPath, config.timeZone) }) {
   const tz = config.timeZone;
   try {
     await device.health();

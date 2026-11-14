@@ -15,7 +15,8 @@ three screens:
 ## Running it
 
 Double-click `run.cmd`, or run it in a `cmd` window. It checks every 60 s and prints one line per
-check. Press Ctrl+C to stop.
+check. Press Ctrl+C to stop. Each line is also written to `logs/dashboard.log` (with the date), and that file is
+cleared every time `run.cmd` starts.
 
 ```bash
 run.cmd

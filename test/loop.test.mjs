@@ -233,3 +233,20 @@ test('isQuiet handles the overnight wrap and a custom window', async () => {
   assert.equal(isQuiet(at('2026-11-14T13:00:00Z'), 'America/Phoenix'), true);  // 6:00 AM
   assert.equal(isQuiet(at('2026-11-14T19:00:00Z'), 'America/Phoenix', [9, 17]), true); // noon in a 9-5 window
 });
+
+test('createLog: prints, writes dated lines to the file, and clears the file on each start', async () => {
+  const { createLog } = await import('../src/loop.mjs');
+  const { mkdtempSync, readFileSync, writeFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const path = join(mkdtempSync(join(tmpdir(), 'aink-log-')), 'logs', 'dashboard.log');
+  const printed = [];
+  const clock = () => new Date('2026-11-14T16:40:00Z');
+  const log = createLog(path, 'America/Phoenix', { print: (l) => printed.push(l), clock });
+  log('9:40 AM view=x');
+  log('9:41 AM view=y');
+  assert.deepEqual(printed, ['9:40 AM view=x', '9:41 AM view=y']);
+  assert.equal(readFileSync(path, 'utf8'), '2026-11-14 9:40 AM view=x\n2026-11-14 9:41 AM view=y\n');
+  createLog(path, 'America/Phoenix', { print: () => {}, clock }); // a restart
+  assert.equal(readFileSync(path, 'utf8'), '');
+});

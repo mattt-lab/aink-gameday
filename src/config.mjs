@@ -12,5 +12,7 @@ export function loadConfig(path = 'config.json', env = process.env) {
   if (!cfg.timeZone) cfg.timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   // Where the finished weekend is saved so the recap survives CFB HQ's Sunday rollover and restarts.
   cfg.snapshotPath = resolve(ROOT, cfg.snapshotPath ?? 'cache/last-week.json');
+  // One line per minute; cleared each time run.cmd starts.
+  cfg.logPath = resolve(ROOT, cfg.logPath ?? 'logs/dashboard.log');
   return cfg;
 }
