@@ -10,5 +10,7 @@ export function loadConfig(path = 'config.json', env = process.env) {
   const cfg = { ...raw };
   if (env.AINK_URL) cfg.deviceUrl = env.AINK_URL;
   if (!cfg.timeZone) cfg.timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  // Where the finished weekend is saved so the recap survives CFB HQ's Sunday rollover and restarts.
+  cfg.snapshotPath = resolve(ROOT, cfg.snapshotPath ?? 'cache/last-week.json');
   return cfg;
 }

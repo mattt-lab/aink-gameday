@@ -6,6 +6,7 @@ import { measureMetrics } from './metrics.mjs';
 import { buildView, withReviewPage } from './render.mjs';
 import { stripMeta } from './screens/common.mjs';
 import { localDate, addDays, ymd, fmtTime } from './time.mjs';
+import { makeSnapshot, reviveSnapshot, loadSnapshot, saveSnapshot, chooseView } from './recap.mjs';
 
 const MIN = 60 * 1000;
 export const CADENCE = {
@@ -26,7 +27,7 @@ const REFRESH = 'full';
  */
 export function createLoop({ config, device, fetchFn = fetch, clock = () => new Date() }) {
   const tz = config.timeZone;
-  const s = { lastUptime: null, current: null, currentAt: 0, espn: new Map(), metrics: null, lastHash: null, lastViewKey: null, lastDrawAt: 0, needsDraw: true, dataAt: null };
+  const s = { snapshot: config.snapshotPath ? loadSnapshot(config.snapshotPath) : null, lastUptime: null, current: null, currentAt: 0, espn: new Map(), metrics: null, lastHash: null, lastViewKey: null, lastDrawAt: 0, needsDraw: true, dataAt: null };
 
   const allEvents = () => {
     const byId = new Map();
@@ -98,7 +99,23 @@ export function createLoop({ config, device, fetchFn = fetch, clock = () => new 
     const keep = new Set(weekDates().map(ymd));
     for (const k of s.espn.keys()) if (!keep.has(k)) s.espn.delete(k);
     games = buildGames(s.current, allEvents());
-    view = withReviewPage(pickView(games, now, tz), now);
+    view = pickView(games, now, tz);
+
+    // A finished week (nothing left to play in current.json) is saved, so the recap can stay up
+    // after CFB HQ switches to next week on Sunday, until Tuesday noon.
+    if (view.kind === 'review') {
+      const snap = makeSnapshot(s.current, games, tz, now);
+      if (snap.games.length && JSON.stringify(snap.games) !== JSON.stringify(s.snapshot?.games)) {
+        s.snapshot = reviveSnapshot(JSON.parse(JSON.stringify(snap)));
+        if (config.snapshotPath) {
+          try { saveSnapshot(config.snapshotPath, snap); } catch (e) { errors.push(`saving recap: ${e.message}`); }
+        }
+      }
+    }
+    const choice = chooseView(view, s.snapshot, now, tz);
+    view = withReviewPage(choice.view, now);
+    const fromSnapshot = choice.recap === 'snapshot';
+    if (fromSnapshot) games = s.snapshot.games;
     const shown = view.kind === 'day' ? gamesOn(games, view.date, tz).length : games.length;
     const done = (r) => ({ ...r, games: shown });
 
@@ -116,7 +133,7 @@ export function createLoop({ config, device, fetchFn = fetch, clock = () => new 
       return done({ view, redrew: false, reason: 'device unreachable', errors });
     }
 
-    const ctx = { now, tz, pinnedTeam: config.pinnedTeam, ...weekContext(s.current), metrics: s.metrics, measure: device.measure, updatedAt: s.dataAt };
+    const ctx = { now, tz, pinnedTeam: config.pinnedTeam, ...(fromSnapshot ? s.snapshot.ctx : weekContext(s.current)), metrics: s.metrics, measure: device.measure, updatedAt: s.dataAt };
     let built;
     try {
       built = await buildView(games, view, ctx);
