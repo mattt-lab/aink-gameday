@@ -88,7 +88,8 @@ export function gamesOn(games, date, tz) {
 /**
  * What the screen shows:
  *  1. any game in progress -> that game's day, live
- *  2. every game of the "hold day" is done and it's before 4:00 AM the next morning -> that day, live (finals)
+ *  2. every game of the "hold day" is done, it's before 4:00 AM the next morning, and the week still has
+ *     games to come -> that day, live (finals). The week's last day skips this: the recap starts at once.
  *  3. the earliest game not done -> its day, live if any game that day is in progress, else upnext
  *  4. nothing left -> week in review
  */
@@ -99,9 +100,9 @@ export function pickView(games, now, tz) {
   const today = localDate(now, tz);
   const holdDay = localHour(now, tz) < 4 ? addDays(today, -1) : today;
   const held = gamesOn(games, holdDay, tz).filter((g) => !g.dead);
-  if (held.length && held.every((g) => isDone(g, now))) return { kind: 'day', date: holdDay, mode: 'live' };
-
   const next = games.find((g) => !isDone(g, now));
+  if (next && held.length && held.every((g) => isDone(g, now))) return { kind: 'day', date: holdDay, mode: 'live' };
+
   if (next) return { kind: 'day', date: localDate(next.when, tz), mode: 'upnext' };
   return { kind: 'review' };
 }

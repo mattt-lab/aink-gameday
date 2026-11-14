@@ -115,12 +115,20 @@ test('hashCommands ignores the Updated text', async () => {
   assert.ok(!stripMeta(a.commands).some((c) => '_volatile' in c));
 });
 
-test("live finals hold (all Saturday final at 11 PM): footer says '+N more finals', never 'more live'", async () => {
-  const s = await screen('2026-11-15T06:00:00Z', 'scores-week-final.json');
-  assert.deepEqual(s.view, { kind: 'day', date: '2026-11-14', mode: 'live' });
-  assert.ok(!s.texts.some((t) => /more live/.test(t)));
-  assert.match(s.texts.find((t) => /more finals/.test(t)), /^\+\d+ more finals$/);
-  assert.match(s.texts.find((t) => /\|/.test(t) && t.includes('PM')), /Final$/);
+test("live finals layout (only finals on the day): footer says '+N more finals', never 'more live'", async () => {
+  const { current, events } = loadFixture(DIR, { scoresFile: 'scores-week-final.json' });
+  const games = buildGames(current, events);
+  const now = new Date('2026-11-15T06:00:00Z');
+  const { commands } = await buildView(games, { kind: 'day', date: '2026-11-14', mode: 'live' }, { now, tz: TZ, pinnedTeam: 'washington', ...weekContext(current), metrics, measure, updatedAt: now });
+  const texts = commands.filter((c) => c.op === 'text').map((c) => c.text);
+  assert.ok(!texts.some((t) => /more live/.test(t)));
+  assert.match(texts.find((t) => /more finals/.test(t)), /^\+\d+ more finals$/);
+  assert.match(texts.find((t) => /\|/.test(t) && t.includes('PM')), /Final$/);
+});
+
+test("week's last game final on Saturday night -> recap starts right away (no 4 AM hold)", async () => {
+  const s = await screen('2026-11-15T06:00:00Z', 'scores-week-final.json'); // 11 PM Saturday, everything final
+  assert.equal(s.view.kind, 'review');
 });
 
 test('live: only Washington live, the rest final, two still to kick off -> Up next table shows them', async () => {
