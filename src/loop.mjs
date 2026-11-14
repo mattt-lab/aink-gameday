@@ -5,7 +5,7 @@ import { buildGames, pickView, gamesOn, isDone, weekContext } from './model.mjs'
 import { measureMetrics } from './metrics.mjs';
 import { buildView, withReviewPage } from './render.mjs';
 import { stripMeta } from './screens/common.mjs';
-import { localDate, addDays, ymd, fmtTime } from './time.mjs';
+import { localDate, localHour, addDays, ymd, fmtTime } from './time.mjs';
 import { makeSnapshot, reviveSnapshot, loadSnapshot, saveSnapshot, chooseView } from './recap.mjs';
 
 const MIN = 60 * 1000;
@@ -21,6 +21,13 @@ export const CADENCE = {
 // Partial refresh was tested on this panel (aink-7.5, firmware 261016) on 2026-11-13: the device accepts
 // refresh:'partial' but still does a full ~4.5 s flashing refresh, so full refresh + the 2-minute live limit stays.
 const REFRESH = 'full';
+
+/** Overnight the device is left alone entirely (no draws, no requests): [startHour, endHour) local. */
+export const DEFAULT_QUIET_HOURS = [23, 7];
+export function isQuiet(now, tz, [start, end] = DEFAULT_QUIET_HOURS) {
+  const h = localHour(now, tz);
+  return start > end ? h >= start || h < end : h >= start && h < end;
+}
 
 /**
  * createLoop({ config, device, fetchFn, clock, log }) -> { tick(): Promise<{view, redrew, reason, errors}> }
@@ -118,6 +125,9 @@ export function createLoop({ config, device, fetchFn = fetch, clock = () => new 
     if (fromSnapshot) games = s.snapshot.games;
     const shown = view.kind === 'day' ? gamesOn(games, view.date, tz).length : games.length;
     const done = (r) => ({ ...r, games: shown });
+
+    // Quiet hours: data keeps updating (so the weekend recap is still saved overnight), the device is left alone.
+    if (isQuiet(now, tz, config.quietHours)) return done({ view, redrew: false, reason: 'quiet hours', errors });
 
     try {
       // A rebooted device shows its own "AInk Ready" screen; uptime going backwards means redraw now.

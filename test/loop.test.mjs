@@ -209,3 +209,27 @@ test('device reboot between ticks (uptime went backwards) -> redraw even though 
   assert.equal(r.redrew, true);
   assert.ok(r.errors.some((e) => /restarted/.test(e)));
 });
+
+test('quiet hours (11 PM - 7 AM local): no device traffic at all, then draws at 7 AM', async () => {
+  const h = harness({ start: '2026-11-14T06:30:00Z' }); // 11:30 PM Friday Arizona
+  let healthCalls = 0;
+  h.device.health = async () => { healthCalls++; return { uptime_ms: 1 }; };
+  const night = await h.loop.tick();
+  assert.equal(night.redrew, false);
+  assert.equal(night.reason, 'quiet hours');
+  assert.equal(h.renders.length, 0);
+  assert.equal(healthCalls, 0);
+  h.now = new Date('2026-11-14T13:59:00Z'); // 6:59 AM
+  assert.equal((await h.loop.tick()).reason, 'quiet hours');
+  h.now = new Date('2026-11-14T14:00:00Z'); // 7:00 AM
+  assert.equal((await h.loop.tick()).redrew, true);
+});
+
+test('isQuiet handles the overnight wrap and a custom window', async () => {
+  const { isQuiet } = await import('../src/loop.mjs');
+  const at = (iso) => new Date(iso);
+  assert.equal(isQuiet(at('2026-11-14T05:59:00Z'), 'America/Phoenix'), false); // 10:59 PM
+  assert.equal(isQuiet(at('2026-11-14T06:00:00Z'), 'America/Phoenix'), true);  // 11:00 PM
+  assert.equal(isQuiet(at('2026-11-14T13:00:00Z'), 'America/Phoenix'), true);  // 6:00 AM
+  assert.equal(isQuiet(at('2026-11-14T19:00:00Z'), 'America/Phoenix', [9, 17]), true); // noon in a 9-5 window
+});

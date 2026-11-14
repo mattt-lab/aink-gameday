@@ -29,6 +29,8 @@ that network. Requirements: Node 20+ and nothing else (no `npm install` needed).
   `set AINK_URL=http://192.168.1.50` before `run.cmd`.
 - `pinnedTeam`: the always-shown team (`washington`).
 - `timeZone`: optional. Defaults to the computer's time zone.
+- `quietHours`: optional `[start, end]` local hours when the display is left alone. Defaults to
+  `[23, 7]` (11 PM to 7 AM). Data keeps updating overnight; the screen catches up at 7 AM.
 
 **Refresh cadence:**
 - CFB HQ data: every 15 min.
