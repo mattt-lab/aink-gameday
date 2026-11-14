@@ -216,3 +216,12 @@ test('live cards show the team record when there is room (2 cards) and drop it w
   const sat = await screen('2026-11-14T21:47:00Z', 'scores-sat-1447.json');
   assert.ok(!sat.texts.some((t) => /^ \(\d+-\d+\)$/.test(t)));
 });
+
+test('records are all-or-nothing: one team too long for its card -> no records on any card', async () => {
+  const s = await screen('2026-11-14T02:40:00Z', 'scores-fri-1940.json', {
+    games: (gs) => gs.map((g) => (g.away === 'illinois' ? { ...g, awayName: 'Illinois Fighting Illini Extra' } : g)),
+  });
+  assert.ok(!s.texts.some((t) => /^ \(\d+-\d+\)$/.test(t)), 'no card shows a record');
+  const ok = await screen('2026-11-14T02:40:00Z', 'scores-fri-1940.json');
+  assert.equal(ok.texts.filter((t) => /^ \(\d+-\d+\)$/.test(t)).length, 4, 'all four teams show records when all fit');
+});

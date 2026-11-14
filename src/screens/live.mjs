@@ -2,7 +2,7 @@
 // row per other live game, then upcoming games if every live game fit, then a one-line footer.
 // When nothing is live any more (the finals hold until 4 AM) the day's finals take the cards/rows.
 import { gamesOn, isDone } from '../model.mjs';
-import { interest, stakesOf, abbrevNetwork } from '../rank.mjs';
+import { interest, stakesOf, abbrevNetwork, shortName } from '../rank.mjs';
 import { fmtTime } from '../time.mjs';
 import { PAD_X, PAD_Y, GAP, W, SCREEN_H, TINY, BODY, FOOTER_H, teamLabel, volatileHeaderText, footerOp, alertOp } from './common.mjs';
 import { teamSegs, matchupSegs, richOps, tableOps, pinBarOps } from './rich.mjs';
@@ -33,7 +33,8 @@ export async function buildLive(games, ctx) {
   const cards = featured.slice(0, MAX_CARDS);
   if (cards.length) {
     const cardW = Math.floor((W - CARD_GAP * (cards.length - 1)) / cards.length);
-    for (const [i, g] of cards.entries()) cmds.push(...(await cardOps(g, PAD_X + i * (cardW + CARD_GAP), y, cardW, m, measure, eyes)));
+    const records = await recordsFitAll(cards, cardW - 24 - m.scoreW - 6, measure);
+    for (const [i, g] of cards.entries()) cmds.push(...(await cardOps(g, PAD_X + i * (cardW + CARD_GAP), y, cardW, m, measure, eyes, records)));
     y += CARD_H + GAP;
   }
 
@@ -94,7 +95,27 @@ export async function buildLive(games, ctx) {
   return cmds;
 }
 
-async function cardOps(g, x, y, cardW, m, measure, eyes) {
+/**
+ * Records are all-or-nothing across the cards: shown only if every team's "name (W-L)" fits its card
+ * (the usual " State" -> " St" shortening allowed), so cards never look uneven.
+ */
+async function recordsFitAll(cards, nameW, measure) {
+  const teams = cards.flatMap((g) => [[g.awayName, g.awayRank, g.awayRecord], [g.homeName, g.homeRank, g.homeRecord]]);
+  if (teams.some(([, , rec]) => !rec)) return false;
+  const label = (name, rank) => `${rank ? `${rank} ` : ''}${name}`;
+  const items = teams.flatMap(([name, rank, rec]) => [
+    { text: `${shortName(label(name, rank))} (${rec})`, size: BODY, bold: true }, // bold = widest case
+    ...(rank ? [{ text: '#', size: TINY }] : []),
+  ]);
+  const widths = (await measure(items)).map((x) => x.width);
+  let i = 0;
+  return teams.every(([, rank]) => {
+    const w = widths[i++] + (rank ? widths[i++] + 1 : 0);
+    return w <= nameW;
+  });
+}
+
+async function cardOps(g, x, y, cardW, m, measure, eyes, records = true) {
   const ix = x + 12, iw = cardW - 24;
   const nameW = iw - m.scoreW - 6;
   const ops = [{ op: 'rect', x, y, w: cardW, h: CARD_H, color: 'white', stroke: 'black', strokeWidth: 2, radius: 8 }];
@@ -107,7 +128,7 @@ async function cardOps(g, x, y, cardW, m, measure, eyes) {
   for (const [i, [name, rank, score, other, rec]] of [[g.awayName, g.awayRank, g.awayScore, g.homeScore, g.awayRecord], [g.homeName, g.homeRank, g.homeScore, g.awayScore, g.homeRecord]].entries()) {
     const ry = y + 36 + i * 46, bold = score > other;
     ops.push(
-      ...(await richOps([...teamSegs(name, rank), ...(rec ? [{ text: ` (${rec})`, bold: false, optional: true }] : [])], { x: ix, y: ry, w: nameW, h: 46, bold }, measure)),
+      ...(await richOps([...teamSegs(name, rank), ...(records && rec ? [{ text: ` (${rec})`, bold: false }] : [])], { x: ix, y: ry, w: nameW, h: 46, bold }, measure)),
       { op: 'text', x: ix + iw - m.scoreW, y: ry, w: m.scoreW, h: 48, text: String(score ?? ''), size: 24, bold, align: 'right', valign: 'middle' },
     );
   }
