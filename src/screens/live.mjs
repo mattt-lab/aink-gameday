@@ -68,13 +68,11 @@ export async function buildLive(games, ctx) {
   const foot = [];
   if (!finalsOnly) {
     // Other games are live: their rows first; upcoming only once every live game is on screen; finals -> footer.
-    const full = SCREEN_H - PAD_Y;
-    const bottom = full - (rest.length > roomRows(full) || finals.length ? FOOTER_H : 0);
+    // No "+N more live" note: the header already gives the live count.
+    const bottom = SCREEN_H - PAD_Y - (finals.length ? FOOTER_H : 0);
     const nRows = Math.min(rest.length, roomRows(bottom));
     await drawRows(rest.slice(0, nRows));
-    const hiddenLive = rest.length - nRows;
-    if (!hiddenLive) await drawUpcoming(bottom);
-    if (hiddenLive) foot.push(`+${hiddenLive} more live`);
+    if (nRows === rest.length) await drawUpcoming(bottom);
     // The day's finished upsets, biggest first (same ranking as the week review), winner first.
     // No upsets yet: the notable finals, ranked teams first.
     const upsets = finals.filter((g) => g.alert === 'upset').sort((a, b) => upsetSize(b) - upsetSize(a));

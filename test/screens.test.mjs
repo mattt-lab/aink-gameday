@@ -52,12 +52,13 @@ test('upnext never contains a pinned-team box', async () => {
   assert.equal(s.bar, undefined);
 });
 
-test("live Saturday: 3 cards, a pinned bar containing 'Washington 7', footer starts '+'", async () => {
+test("live Saturday: 3 cards, a pinned bar containing 'Washington 7', no '+N more live' (the header has the count)", async () => {
   const s = await screen('2026-11-14T21:47:00Z', 'scores-sat-1447.json');
   assert.equal(s.view.mode, 'live');
   assert.equal(s.commands.filter((c) => c.op === 'rect' && c.h === 134).length, 3);
   assert.match(s.bar.text, /^Washington 7/);
-  assert.match(s.texts.find((t) => /more live/.test(t)), /^\+\d+ more live/);
+  assert.ok(!s.texts.some((t) => /more live/.test(t)));
+  assert.match(s.texts.find((t) => /Upsets:/.test(t)), /^Upsets: /);
 });
 
 test('live: the footer lists the day\'s finished upsets, biggest first, winner first, and no other finals', async () => {
