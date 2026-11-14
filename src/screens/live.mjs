@@ -2,7 +2,7 @@
 // row per other live game, then upcoming games if every live game fit, then a one-line footer.
 // When nothing is live any more (the finals hold until 4 AM) the day's finals take the cards/rows.
 import { gamesOn, isDone } from '../model.mjs';
-import { interest, stakesOf, abbrevNetwork, shortName } from '../rank.mjs';
+import { interest, stakesOf, abbrevNetwork, shortName, upsetSize } from '../rank.mjs';
 import { fmtTime } from '../time.mjs';
 import { PAD_X, PAD_Y, GAP, W, SCREEN_H, TINY, BODY, FOOTER_H, teamLabel, volatileHeaderText, footerOp, alertOp } from './common.mjs';
 import { teamSegs, matchupSegs, richOps, tableOps, pinBarOps } from './rich.mjs';
@@ -75,8 +75,16 @@ export async function buildLive(games, ctx) {
     const hiddenLive = rest.length - nRows;
     if (!hiddenLive) await drawUpcoming(bottom);
     if (hiddenLive) foot.push(`+${hiddenLive} more live`);
-    if (finals.length) {
-      const notable = [...finals].sort((a, b) => (b.alert === 'upset') - (a.alert === 'upset') || rankWeight(b) - rankWeight(a));
+    // The day's finished upsets, biggest first (same ranking as the week review), winner first.
+    // No upsets yet: the notable finals, ranked teams first.
+    const upsets = finals.filter((g) => g.alert === 'upset').sort((a, b) => upsetSize(b) - upsetSize(a));
+    if (upsets.length) {
+      foot.push('Upsets: ' + upsets.map((g) => {
+        const [win, lose] = g.awayScore > g.homeScore ? ['away', 'home'] : ['home', 'away'];
+        return `${teamLabel(g[`${win}Name`], g[`${win}Rank`])} ${g[`${win}Score`]}, ${teamLabel(g[`${lose}Name`], g[`${lose}Rank`])} ${g[`${lose}Score`]}`;
+      }).join('  |  '));
+    } else if (finals.length) {
+      const notable = [...finals].sort((a, b) => rankWeight(b) - rankWeight(a));
       foot.push('Final: ' + notable.map((g) => `${teamLabel(g.awayName, g.awayRank)} ${g.awayScore}, ${teamLabel(g.homeName, g.homeRank)} ${g.homeScore}`).join('  |  '));
     }
   } else {

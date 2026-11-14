@@ -60,6 +60,27 @@ test("live Saturday: 3 cards, a pinned bar containing 'Washington 7', footer sta
   assert.match(s.texts.find((t) => /more live/.test(t)), /^\+\d+ more live/);
 });
 
+test('live: the footer lists the day\'s finished upsets, biggest first, winner first, and no other finals', async () => {
+  const s = await screen('2026-11-14T21:47:00Z', 'scores-sat-1447.json');
+  const footer = s.texts.find((t) => /Upsets:/.test(t));
+  assert.ok(footer, 'footer has an Upsets: section');
+  const upsets = footer.split('Upsets: ')[1];
+  // #13 Wake Forest losing to SMU outranks two 2.5-point line upsets.
+  assert.match(upsets, /^SMU 23, #13 Wake Forest 20  \|  /);
+  assert.match(upsets, /Mississippi State 23, Auburn 20/);
+  assert.match(upsets, /Tulane 28, Rice 21/);
+  assert.ok(!/Alabama|Final:/.test(footer));
+});
+
+test('live: with no finished upsets the footer falls back to the notable finals', async () => {
+  const s = await screen('2026-11-14T21:47:00Z', 'scores-sat-1447.json', {
+    games: (gs) => gs.map((g) => (g.completed && g.alert === 'upset' ? { ...g, alert: null } : g)),
+  });
+  const footer = s.texts.find((t) => /Final:/.test(t));
+  assert.ok(footer && !/Upsets:/.test(footer));
+  assert.match(footer.split('Final: ')[1], /^#3 Alabama 34/);
+});
+
 test("live: pinned bar stays and reads 'Final' when UW is final but other games are live", async () => {
   const s = await screen('2026-11-14T21:47:00Z', 'scores-sat-1447.json', {
     games: (gs) => gs.map((g) => (g.away === 'washington' ? { ...g, state: 'post', completed: true, status: 'final', clockText: 'Final' } : g)),
