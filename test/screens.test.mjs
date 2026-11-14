@@ -208,3 +208,11 @@ test('top25: no subtitle; opponents drawn in the tiny pixel font', async () => {
   assert.equal(commands.find((c) => c.op === 'header').subtitle, undefined);
   assert.ok(commands.filter((c) => c.op === 'raw_bitmap').length >= 15);
 });
+
+test('live cards show the team record when there is room (2 cards) and drop it when tight (3 cards)', async () => {
+  const fri = await screen('2026-11-14T02:40:00Z', 'scores-fri-1940.json');
+  assert.ok(fri.texts.includes(' (4-5)'), 'Florida State 4-5 from ESPN');
+  assert.ok(fri.texts.includes(' (6-3)'), 'Pittsburgh 6-3 from ESPN');
+  const sat = await screen('2026-11-14T21:47:00Z', 'scores-sat-1447.json');
+  assert.ok(!sat.texts.some((t) => /^ \(\d+-\d+\)$/.test(t)));
+});

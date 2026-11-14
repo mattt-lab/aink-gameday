@@ -104,10 +104,10 @@ async function cardOps(g, x, y, cardW, m, measure, eyes) {
     { op: 'text', x: tx, y: y + 8, w: 120, h: 26, text: abbrevNetwork(g.network), size: TINY, valign: 'middle', maxLines: 1 },
     { op: 'text', x: ix, y: y + 8, w: iw, h: 26, text: g.clockText, size: BODY, bold: true, align: 'right', valign: 'middle' },
   );
-  for (const [i, [name, rank, score, other]] of [[g.awayName, g.awayRank, g.awayScore, g.homeScore], [g.homeName, g.homeRank, g.homeScore, g.awayScore]].entries()) {
+  for (const [i, [name, rank, score, other, rec]] of [[g.awayName, g.awayRank, g.awayScore, g.homeScore, g.awayRecord], [g.homeName, g.homeRank, g.homeScore, g.awayScore, g.homeRecord]].entries()) {
     const ry = y + 36 + i * 46, bold = score > other;
     ops.push(
-      ...(await richOps(teamSegs(name, rank), { x: ix, y: ry, w: nameW, h: 46, bold }, measure)),
+      ...(await richOps([...teamSegs(name, rank), ...(rec ? [{ text: ` (${rec})`, bold: false, optional: true }] : [])], { x: ix, y: ry, w: nameW, h: 46, bold }, measure)),
       { op: 'text', x: ix + iw - m.scoreW, y: ry, w: m.scoreW, h: 48, text: String(score ?? ''), size: 24, bold, align: 'right', valign: 'middle' },
     );
   }

@@ -38,6 +38,9 @@ export function buildGames(current, espnEvents = []) {
     const comp = ev?.competitions?.[0];
     const side = (ha) => comp?.competitors?.find((c) => c.homeAway === ha);
     const name = (id, ha) => teams[id]?.name ?? side(ha)?.team?.location ?? titleCase(id);
+    // Overall record: ESPN's (fresher), else CFB HQ's wins-losses, else none.
+    const record = (id, ha) => side(ha)?.records?.find((r) => r.type === 'total')?.summary
+      ?? (teams[id]?.wins != null ? `${teams[id].wins}-${teams[id].losses}` : null);
     const type = ev?.status?.type;
     const state = type?.state ?? 'pre';
     const completed = !!type?.completed;
@@ -49,6 +52,7 @@ export function buildGames(current, espnEvents = []) {
       id: String(g.cfbdId), away: g.away, home: g.home,
       awayName: name(g.away, 'away'), homeName: name(g.home, 'home'),
       awayAbbr: side('away')?.team?.abbreviation ?? null, homeAbbr: side('home')?.team?.abbreviation ?? null,
+      awayRecord: record(g.away, 'away'), homeRecord: record(g.home, 'home'),
       awayRank: g.awayRank ?? null, homeRank: g.homeRank ?? null,
       when: new Date(g.when), network: g.network ?? null, spread: g.spread ?? null,
       stakes: stakes.get(g.cfbdId) ?? null,

@@ -38,6 +38,12 @@ export async function richOps(segs, { x, y, w, h, size = BODY, bold = false }, m
   const widthsOf = async (ps) => (await measure(ps.map((p) => ({ text: p.text, size: p.size, bold: weight(p) })))).map((m, i) => (ps[i].note ? tinyWidth(ps[i].text) + 6 : m.width));
   let widths = await widthsOf(parts);
   const total = () => widths.reduce((a, b, i) => a + b + (parts[i].small ? HASH_GAP : 0), 0);
+  // Optional segments (e.g. a record) are the first thing dropped when the line doesn't fit.
+  if (total() > w && segs.some((s) => s.optional)) {
+    segs = segs.filter((s) => !s.optional);
+    parts = sized(segs);
+    widths = await widthsOf(parts);
+  }
   if (total() > w) {
     parts = sized(segs.map((s) => (s.small ? s : { ...s, text: shortName(s.text) })));
     widths = await widthsOf(parts);
