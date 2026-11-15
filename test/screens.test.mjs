@@ -261,3 +261,15 @@ test('pinned bar never cuts off a score: the longest name falls back to its abbr
   const tight = await pinBarOps(segs, 'x'.repeat(25), box, measure);
   assert.equal(tight.filter((o) => o.op === 'text' && o.size === 18).map((o) => o.text).join(''), 'WASH 24  -  EMU 21');
 });
+
+test('live cards: a name too long for a 3-card layout falls back to its abbreviation instead of "South…"', async () => {
+  const s = await screen('2026-11-14T21:47:00Z', 'scores-sat-1447.json', {
+    games: (gs) => gs.map((g) => (g.state === 'in' ? { ...g, homeName: 'South Carolina', homeAbbr: 'SC', homeRank: 17, homeRecord: '7-3' } : g)),
+  });
+  const cards = s.commands.filter((c) => c.op === 'rect' && c.h === 134);
+  assert.equal(cards.length, 3);
+  const names = s.commands.filter((c) => c.op === 'text' && c.size === 12 && c.h === 46);
+  assert.ok(names.some((c) => c.text === '17 SC'), names.map((c) => c.text).join(' / '));
+  const widths = await measure(names.map((c) => ({ text: c.text, size: 12 })));
+  names.forEach((c, i) => assert.ok(widths[i].width <= c.w, `"${c.text}" fits its card`));
+});
