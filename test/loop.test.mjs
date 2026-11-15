@@ -250,3 +250,30 @@ test('createLog: prints, writes dated lines to the file, and clears the file on 
   createLog(path, 'America/Phoenix', { print: () => {}, clock }); // a restart
   assert.equal(readFileSync(path, 'utf8'), '');
 });
+
+test('createUpdateCheck: reports a new commit once HEAD moves; never fires when git is unavailable', async () => {
+  const { createUpdateCheck } = await import('../src/loop.mjs');
+  let head = 'aaa1111';
+  const check = createUpdateCheck(() => head);
+  assert.equal(check(), null);
+  head = 'bbb2222';
+  assert.deepEqual(check(), { from: 'aaa1111', to: 'bbb2222' });
+  const noGit = createUpdateCheck(() => { throw new Error('git not found'); });
+  assert.equal(noGit(), null);
+  let flaky = 'ccc3333';
+  const later = createUpdateCheck(() => { if (flaky === null) throw new Error('index.lock'); return flaky; });
+  flaky = null;
+  assert.equal(later(), null); // a failed read mid-commit is not an update
+});
+
+test('createLog append mode (an automatic restart) keeps the existing log', async () => {
+  const { createLog } = await import('../src/loop.mjs');
+  const { mkdtempSync, readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const path = join(mkdtempSync(join(tmpdir(), 'aink-log-')), 'dashboard.log');
+  const clock = () => new Date('2026-11-14T16:40:00Z');
+  createLog(path, 'America/Phoenix', { print: () => {}, clock })('before');
+  createLog(path, 'America/Phoenix', { print: () => {}, clock, append: true })('after');
+  assert.equal(readFileSync(path, 'utf8'), '2026-11-14 before\n2026-11-14 after\n');
+});

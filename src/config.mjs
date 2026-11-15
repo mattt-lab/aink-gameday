@@ -14,5 +14,6 @@ export function loadConfig(path = 'config.json', env = process.env) {
   cfg.snapshotPath = resolve(ROOT, cfg.snapshotPath ?? 'cache/last-week.json');
   // One line per minute; cleared each time run.cmd starts.
   cfg.logPath = resolve(ROOT, cfg.logPath ?? 'logs/dashboard.log');
+  cfg.root = ROOT;
   return cfg;
 }

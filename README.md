@@ -16,7 +16,13 @@ three screens:
 
 Double-click `run.cmd`, or run it in a `cmd` window. It checks every 60 s and prints one line per
 check. Press Ctrl+C to stop. Each line is also written to `logs/dashboard.log` (with the date), and that file is
-cleared every time `run.cmd` starts.
+cleared every time you start `run.cmd`.
+
+**Updates restart it automatically.** After each check the dashboard looks at this folder's git
+commit; when a new commit lands (e.g. `git pull` or a local commit), it logs `update found`,
+exits, and `run.cmd` starts it again at once with the new code. Automatic restarts add to the log
+instead of clearing it. Uncommitted edits never trigger a restart. If it crashes, `run.cmd` waits
+60 s and tries again.
 
 ```bash
 run.cmd

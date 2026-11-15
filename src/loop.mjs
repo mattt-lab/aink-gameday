@@ -9,6 +9,7 @@ import { localDate, localHour, addDays, ymd, fmtTime } from './time.mjs';
 import { makeSnapshot, reviveSnapshot, loadSnapshot, saveSnapshot, chooseView } from './recap.mjs';
 import { writeFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 const MIN = 60 * 1000;
 export const CADENCE = {
@@ -183,10 +184,10 @@ export function createLoop({ config, device, fetchFn = fetch, clock = () => new 
  * A logger that prints to the console and to `path`, starting the file fresh (cleared) each run.
  * File lines carry the date too, since a run spans days. File errors never stop the dashboard.
  */
-export function createLog(path, tz, { print = console.log, clock = () => new Date() } = {}) {
+export function createLog(path, tz, { print = console.log, clock = () => new Date(), append = false } = {}) {
   let fileOk = !!path;
   if (fileOk) {
-    try { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, ''); } catch { fileOk = false; }
+    try { mkdirSync(dirname(path), { recursive: true }); if (!append) writeFileSync(path, ''); } catch { fileOk = false; }
   }
   return (line) => {
     print(line);
@@ -195,8 +196,34 @@ export function createLog(path, tz, { print = console.log, clock = () => new Dat
   };
 }
 
+/** Exit code that tells run.cmd "new code was committed: start me again". */
+export const RESTART_EXIT_CODE = 75;
+
+/** The commit this checkout is on, or throws (no git, not a repo, mid-commit). */
+export function gitHead(root) {
+  return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 }).trim();
+}
+
+/**
+ * Remembers the commit the dashboard started on; each call returns {from, to} once HEAD has moved
+ * to a different commit, else null. Any failure to read HEAD counts as "no update", never a restart.
+ */
+export function createUpdateCheck(readHead) {
+  let start = null;
+  try { start = readHead(); } catch { /* no git: never restarts */ }
+  return () => {
+    if (!start) return null;
+    try {
+      const now = readHead();
+      return now && now !== start ? { from: start.slice(0, 7), to: now.slice(0, 7) } : null;
+    } catch {
+      return null;
+    }
+  };
+}
+
 /** Runs forever (Ctrl+C to stop), one line per tick to the console and the log file. */
-export async function runLoop({ config, device, log = createLog(config.logPath, config.timeZone) }) {
+export async function runLoop({ config, device, log = createLog(config.logPath, config.timeZone, { append: process.env.AINK_RESTART === '1' }), checkUpdate = createUpdateCheck(() => gitHead(config.root)) }) {
   const tz = config.timeZone;
   try {
     await device.health();
@@ -215,6 +242,12 @@ export async function runLoop({ config, device, log = createLog(config.logPath, 
     }
     const v = r.view ? (r.view.kind === 'review' ? 'view=review' : `view=${r.view.date} mode=${r.view.mode}`) : 'view=-';
     log(`${fmtTime(new Date(), tz)} ${v} games=${r.games} redrew=${r.redrew ? 'y' : 'n'} ${r.reason}${r.errors.length ? ' | errors: ' + r.errors.join('; ') : ''}`);
+    // Checked between ticks, so a restart never interrupts a draw. run.cmd starts the new code at once.
+    const update = checkUpdate();
+    if (update) {
+      log(`${fmtTime(new Date(), tz)} update found (${update.from} -> ${update.to}); restarting with the new code`);
+      process.exit(RESTART_EXIT_CODE);
+    }
     await new Promise((res) => setTimeout(res, CADENCE.tickMs));
   }
 }
