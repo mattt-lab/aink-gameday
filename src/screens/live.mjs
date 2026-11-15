@@ -41,7 +41,7 @@ export async function buildLive(games, ctx) {
   if (pinned) {
     const scored = pinned.awayScore != null;
     const segs = scored
-      ? [...teamSegs(pinned.awayName, pinned.awayRank, ` ${pinned.awayScore}  -  `), ...teamSegs(pinned.homeName, pinned.homeRank, ` ${pinned.homeScore}`)]
+      ? [...teamSegs(pinned.awayName, pinned.awayRank, ` ${pinned.awayScore}  -  `, undefined, pinned.awayAbbr), ...teamSegs(pinned.homeName, pinned.homeRank, ` ${pinned.homeScore}`, undefined, pinned.homeAbbr)]
       : matchupSegs(pinned);
     const right = [scored ? pinned.clockText : fmtTime(pinned.when, tz), abbrevNetwork(pinned.network)].filter(Boolean).join('  |  ');
     cmds.push(...(await pinBarOps(segs, right, { x: PAD_X, y, w: W, h: m.pinBarH }, measure)));
@@ -147,8 +147,8 @@ async function rowOps(g, y, m, measure, eyes) {
   const ops = [{ op: 'line', x0: PAD_X, y0: y + rowH, x1: PAD_X + W, y1: y + rowH }];
   if (g.alert) ops.push(alertOp(g.alert, PAD_X, y + 6, 20, eyes));
   ops.push(
-    ...(await richOps(teamSegs(g.awayName, g.awayRank, ` ${g.awayScore}`), { x: PAD_X + ALERT_W, y, w: nameW - 8, h: rowH, bold: g.awayScore > g.homeScore }, measure)),
-    ...(await richOps(teamSegs(g.homeName, g.homeRank, ` ${g.homeScore}`), { x: PAD_X + ALERT_W + nameW, y, w: nameW - 8, h: rowH, bold: g.homeScore > g.awayScore }, measure)),
+    ...(await richOps(teamSegs(g.awayName, g.awayRank, ` ${g.awayScore}`, undefined, g.awayAbbr), { x: PAD_X + ALERT_W, y, w: nameW - 8, h: rowH, bold: g.awayScore > g.homeScore }, measure)),
+    ...(await richOps(teamSegs(g.homeName, g.homeRank, ` ${g.homeScore}`, undefined, g.homeAbbr), { x: PAD_X + ALERT_W + nameW, y, w: nameW - 8, h: rowH, bold: g.homeScore > g.awayScore }, measure)),
     { op: 'text', x: PAD_X + ALERT_W + 2 * nameW, y, w: NET_W, h: rowH, text: abbrevNetwork(g.network), size: TINY, valign: 'middle', maxLines: 1 },
     { op: 'text', x: PAD_X, y, w: W, h: rowH, text: g.clockText, size: BODY, align: 'right', valign: 'middle' },
   );

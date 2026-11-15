@@ -12,8 +12,9 @@ const HASH_GAP = 1;
  * Segments for a team: [{text:'#', small:true}, {text:'4 UCLA'}] or [{text:'UCLA'}]. Extra text is appended.
  * `bold` (optional) overrides the line's weight for this team's text.
  */
-export function teamSegs(name, rank, suffix = '', bold) {
-  const main = { text: `${rank ? `${rank} ` : ''}${name}${suffix}`, ...(bold === undefined ? {} : { bold }) };
+export function teamSegs(name, rank, suffix = '', bold, abbr) {
+  const r = rank ? `${rank} ` : '';
+  const main = { text: `${r}${name}${suffix}`, ...(bold === undefined ? {} : { bold }), ...(abbr && abbr !== name ? { alt: `${r}${abbr}${suffix}` } : {}) };
   return rank ? [{ text: '#', small: true }, main] : [main];
 }
 
@@ -46,6 +47,15 @@ export async function richOps(segs, { x, y, w, h, size = BODY, bold = false }, m
   }
   if (total() > w) {
     parts = sized(segs.map((s) => (s.small ? s : { ...s, text: shortName(s.text) })));
+    widths = await widthsOf(parts);
+  }
+  // Still too wide: swap the longest name for its abbreviation ("Eastern Michigan 21" -> "EMU 21"),
+  // one at a time, so text that ends in a score never loses the score to the "…".
+  const saving = (p) => p.text.length - p.alt.length;
+  while (total() > w) {
+    const i = parts.reduce((best, p, k) => (p.alt && (best < 0 || saving(p) > saving(parts[best])) ? k : best), -1);
+    if (i < 0) break;
+    parts = parts.map((p, k) => (k === i ? { ...p, text: p.alt, alt: undefined } : p));
     widths = await widthsOf(parts);
   }
   const capTop = y + Math.round((h - CAP[size]) / 2);

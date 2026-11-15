@@ -247,3 +247,17 @@ test('records are all-or-nothing: one team too long for its card -> no records o
   const ok = await screen('2026-11-14T02:40:00Z', 'scores-fri-1940.json');
   assert.equal(ok.texts.filter((t) => /^ \(\d+-\d+\)$/.test(t)).length, 4, 'all four teams show records when all fit');
 });
+
+test('pinned bar never cuts off a score: the longest name falls back to its abbreviation until the line fits', async () => {
+  const { pinBarOps, teamSegs } = await import('../src/screens/rich.mjs');
+  const segs = [...teamSegs('Washington', null, ' 24  -  ', undefined, 'WASH'), ...teamSegs('Eastern Michigan', null, ' 21', undefined, 'EMU')];
+  const box = { x: 20, y: 100, w: 760, h: 45 };
+  const ops = await pinBarOps(segs, 'Q3 12:34  |  FS1', box, measure);
+  const text = ops.filter((o) => o.op === 'text' && o.size === 18);
+  assert.equal(text.map((o) => o.text).join(''), 'Washington 24  -  EMU 21');
+  const widths = await measure(text.map((o) => ({ text: o.text, size: 18 })));
+  text.forEach((o, i) => assert.ok(widths[i].width <= o.w, `"${o.text}" fits its box`));
+  // Still too wide -> both names abbreviate.
+  const tight = await pinBarOps(segs, 'x'.repeat(25), box, measure);
+  assert.equal(tight.filter((o) => o.op === 'text' && o.size === 18).map((o) => o.text).join(''), 'WASH 24  -  EMU 21');
+});

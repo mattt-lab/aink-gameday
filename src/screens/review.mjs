@@ -24,7 +24,7 @@ export async function buildReview(games, ctx) {
   const cmds = [{ op: 'clear' }, { op: 'header', x: PAD_X, y: PAD_Y, w: W, title: `Week ${ctx.week} in Review`, subtitle: 'Next slate when CFB HQ updates', icon: 'star' }];
   let y = PAD_Y + m.headerSubH + GAP;
   if (pinned) {
-    const segs = [...teamSegs(pinned.awayName, pinned.awayRank, ` ${pinned.awayScore}  -  `), ...teamSegs(pinned.homeName, pinned.homeRank, ` ${pinned.homeScore}`)];
+    const segs = [...teamSegs(pinned.awayName, pinned.awayRank, ` ${pinned.awayScore}  -  `, undefined, pinned.awayAbbr), ...teamSegs(pinned.homeName, pinned.homeRank, ` ${pinned.homeScore}`, undefined, pinned.homeAbbr)];
     cmds.push(...(await pinBarOps(segs, 'Final', { x: PAD_X, y, w: W, h: m.pinBarH }, measure)));
     y += m.pinBarH + GAP;
   }
