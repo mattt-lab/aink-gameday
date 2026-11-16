@@ -1,21 +1,23 @@
 // Top 25 Recap: alternates with Week in Review once the week's games are done. Two columns,
-// #1-13 left and #14-25 right; each team's result. Losses are bold with the fire icon. No pinned team.
+// #1-13 left and #14-25 right; each team's result. Every loss is bold; only an upset loss (the same
+// rule as the fire icon everywhere else) gets the fire, so #22 losing at #1 doesn't look like an upset. No pinned team.
 import { fmtTime } from '../time.mjs';
 import { PAD_X, PAD_Y, GAP, W, SCREEN_H, BODY, volatileHeaderText, alertOp } from './common.mjs';
 import { teamSegs, richOps } from './rich.mjs';
 
 const COL_GAP = 20, ICON_W = 30, RESULT_W = 96;
 
-/** One team's week: { text: 'W 38-17' | 'L 10-13' | 'Bye' | '-', lost, opponent: 'at #22 Missouri' | 'vs Duke' | '' } */
+/** One team's week: { text: 'W 38-17' | 'L 10-13' | 'Bye' | '-', lost, upset (lost as the favourite), opponent: 'at #22 MIZ' | 'vs DUKE' | '' } */
 export function resultFor(teamId, games) {
   const g = games.find((x) => x.away === teamId || x.home === teamId);
-  if (!g) return { text: 'Bye', lost: false, opponent: '' };
+  if (!g) return { text: 'Bye', lost: false, upset: false, opponent: '' };
   const home = g.home === teamId;
   const [oName, oRank] = home ? [g.awayAbbr ?? g.awayName, g.awayRank] : [g.homeAbbr ?? g.homeName, g.homeRank];
   const opponent = `${home ? 'vs' : 'at'} ${oRank ? `#${oRank} ` : ''}${oName}`;
-  if (!g.completed || g.awayScore == null) return { text: '-', lost: false, opponent };
+  if (!g.completed || g.awayScore == null) return { text: '-', lost: false, upset: false, opponent };
   const us = home ? g.homeScore : g.awayScore, them = home ? g.awayScore : g.homeScore;
-  return { text: `${us > them ? 'W' : 'L'} ${us}-${them}`, lost: us < them, opponent };
+  const lost = us < them;
+  return { text: `${us > them ? 'W' : 'L'} ${us}-${them}`, lost, upset: lost && g.alert === 'upset', opponent };
 }
 
 /**
@@ -34,7 +36,7 @@ export async function buildTop25(games, ctx) {
     const col = i < perCol ? 0 : 1;
     const x = PAD_X + col * (colW + COL_GAP), y = top + (i % perCol) * rowH;
     const r = resultFor(id, games);
-    if (r.lost) cmds.push(alertOp('upset', x, y + Math.round((rowH - 20) / 2), 20, eyes));
+    if (r.upset) cmds.push(alertOp('upset', x, y + Math.round((rowH - 20) / 2), 20, eyes));
     cmds.push(
       ...(await richOps([...teamSegs(ctx.teamNames?.[id] ?? id, i + 1), ...(r.opponent ? [{ text: `  ${r.opponent}`, note: true }] : [])], { x: x + ICON_W, y, w: colW - ICON_W - RESULT_W, h: rowH, bold: r.lost }, measure)),
       { op: 'text', x: x + colW - RESULT_W, y, w: RESULT_W, h: rowH, text: r.text, size: BODY, bold: r.lost, align: 'right', valign: 'middle' },

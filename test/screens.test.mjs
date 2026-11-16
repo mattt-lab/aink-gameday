@@ -193,25 +193,34 @@ test('no internal _ keys reach the device', async () => {
   assert.ok(!/"_(table|pinBar|volatile)"/.test(s.json));
 });
 
-test('top25: 25 ranked teams in two columns, losses bold with fire, no pinned bar', async () => {
+test('top25: 25 ranked teams in two columns, every loss bold, fire only on upset losses, no pinned bar', async () => {
   const { current, events } = loadFixture(DIR, { scoresFile: 'scores-week-final.json' });
-  const games = buildGames(current, events);
+  // As it really went: #1 Georgia beat #22 Missouri 13-10 -> Missouri's loss is expected (bold, no fire).
+  const games = buildGames(current, events).map((g) => (g.home === 'georgia' ? { ...g, awayScore: 10, homeScore: 13, alert: null } : g));
   const now = new Date('2026-11-16T19:00:00Z');
   const { commands } = await buildView(games, { kind: 'review', page: 'top25' }, { now, tz: TZ, pinnedTeam: 'washington', ...weekContext(current), metrics, measure, updatedAt: now });
   const results = commands.filter((c) => c.op === 'text' && /^(W|L) \d+-\d+$|^Bye$|^-$/.test(c.text));
   assert.equal(results.length, 25);
   const losses = results.filter((c) => c.text.startsWith('L'));
   assert.ok(losses.length > 0 && losses.every((c) => c.bold));
-  assert.equal(commands.filter((c) => c.op === 'icon' && c.name === 'fire').length, losses.length);
+  const upsetLosses = games.filter((g) => g.completed && g.alert === 'upset').flatMap((g) => [g.awayScore < g.homeScore ? g.away : g.home])
+    .filter((id) => weekContext(current).rankings.slice(0, 25).includes(id));
+  assert.ok(upsetLosses.length < losses.length, 'fixture has both upset and expected losses');
+  assert.equal(commands.filter((c) => c.op === 'icon' && c.name === 'fire').length, upsetLosses.length);
   assert.ok(!commands.some((c) => c._pinBar));
-  assert.equal(commands.find((c) => c.op === 'text' && c.text === '1 Georgia').bold, true); // Georgia lost 10-13
+  const mizzou = commands.find((c) => c.op === 'text' && c.text === '22 Missouri');
+  assert.equal(mizzou.bold, true); // lost: still bold
+  assert.ok(!commands.some((c) => c.op === 'icon' && c.name === 'fire' && c.y < mizzou.y + 10 && c.y > mizzou.y - 30 && c.x < mizzou.x && c.x > mizzou.x - 40), 'no fire beside #22 Missouri');
 });
 
 test('top25: resultFor reports bye and unfinished games', () => {
-  assert.deepEqual(resultFor('nobody', []), { text: 'Bye', lost: false, opponent: '' });
+  assert.deepEqual(resultFor('nobody', []), { text: 'Bye', lost: false, upset: false, opponent: '' });
   const g = { away: 'a', home: 'b', awayName: 'Alpha', homeName: 'Beta', awayAbbr: 'ALP', homeAbbr: 'BET', awayRank: 7, homeRank: null };
-  assert.deepEqual(resultFor('a', [{ ...g, completed: false, awayScore: null }]), { text: '-', lost: false, opponent: 'at BET' });
-  assert.deepEqual(resultFor('b', [{ ...g, completed: true, awayScore: 20, homeScore: 17 }]), { text: 'L 17-20', lost: true, opponent: 'vs #7 ALP' });
+  assert.deepEqual(resultFor('a', [{ ...g, completed: false, awayScore: null }]), { text: '-', lost: false, upset: false, opponent: 'at BET' });
+  // Unranked Beta losing to #7 Alpha is an expected loss: bold, no fire.
+  assert.deepEqual(resultFor('b', [{ ...g, completed: true, awayScore: 20, homeScore: 17, alert: null }]), { text: 'L 17-20', lost: true, upset: false, opponent: 'vs #7 ALP' });
+  // #7 Alpha losing to unranked Beta is an upset loss: fire.
+  assert.deepEqual(resultFor('a', [{ ...g, completed: true, awayScore: 17, homeScore: 20, alert: 'upset' }]), { text: 'L 17-20', lost: true, upset: true, opponent: 'at BET' });
 });
 
 test('review pages alternate every 5 minutes', () => {
