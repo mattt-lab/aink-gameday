@@ -85,3 +85,19 @@ test('weekend recap survives the Sunday rollover and a restart, then gives way a
   const tue = await h.loop.tick();
   assert.deepEqual([tue.view.kind, tue.view.mode], ['day', 'upnext']);
 });
+
+test('a stray Sunday game no longer blocks the recap: saved once Saturday is done, shown Sunday morning', async () => {
+  const path = join(mkdtempSync(join(tmpdir(), 'aink-')), 'last-week.json');
+  const h = weekend(path);
+  // Week 11 plus a ranked Sunday afternoon game (no ESPN data yet -> still to play).
+  h.current = structuredClone(WEEK11);
+  h.current.allGames.push({ cfbdId: 999001, away: 'ohio-state', home: 'michigan', awayRank: 5, when: '2026-11-15T20:00:00Z' });
+  h.now = new Date('2026-11-15T12:00:00Z'); // Sunday 5 AM
+  const sun = await h.loop.tick();
+  assert.equal(sun.view.kind, 'review');
+  assert.ok(existsSync(path), 'recap saved although a Sunday game is still to come');
+  // CFB HQ rolls to week 12 later on Sunday: the saved weekend stays up.
+  h.current = WEEK12;
+  h.now = new Date('2026-11-16T01:00:00Z');
+  assert.equal((await h.loop.tick()).view.kind, 'review');
+});

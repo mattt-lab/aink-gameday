@@ -7,7 +7,7 @@ import { dirname } from 'node:path';
 import { loadConfig } from './config.mjs';
 import { createDevice } from './device.mjs';
 import { measureMetrics } from './metrics.mjs';
-import { buildGames, pickView, weekContext } from './model.mjs';
+import { buildGames, pickView, weekContext, visibleGames } from './model.mjs';
 import { loadFixture } from './fixtures.mjs';
 import { renderView, withReviewPage } from './render.mjs';
 
@@ -21,7 +21,8 @@ const device = createDevice(config.deviceUrl);
 if (args.fixture) {
   const now = args.now ? new Date(args.now) : new Date();
   const { current, events } = loadFixture(args.fixture, { scoresFile: args.scores });
-  const games = buildGames(current, events);
+  const all = buildGames(current, events);
+  const games = pickView(visibleGames(all, config.pinnedTeam, config.timeZone), now, config.timeZone).kind === 'review' ? all : visibleGames(all, config.pinnedTeam, config.timeZone);
   let view = withReviewPage(pickView(games, now, config.timeZone), now);
   if (args.page && view.kind === 'review') view = { ...view, page: args.page };
   const metrics = await measureMetrics(device);

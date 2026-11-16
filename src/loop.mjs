@@ -1,7 +1,7 @@
 // The refresh loop: fetch on a cadence, keep the last good data, redraw only when the screen's
 // content changed (and in live mode no more than every 2 minutes, since each refresh flashes).
 import { fetchCurrent, fetchScoreboard } from './fetchers.mjs';
-import { buildGames, pickView, gamesOn, isDone, weekContext } from './model.mjs';
+import { buildGames, pickView, gamesOn, isDone, weekContext, visibleGames, weekendDone } from './model.mjs';
 import { measureMetrics } from './metrics.mjs';
 import { buildView, withReviewPage } from './render.mjs';
 import { stripMeta } from './screens/common.mjs';
@@ -96,24 +96,26 @@ export function createLoop({ config, device, fetchFn = fetch, clock = () => new 
 
     // Decide the day from what we know, refresh ESPN for it (and the next ESPN date, since a late
     // west-coast kickoff can fall on the next Eastern date), then decide again with fresh scores.
+    const visible = (all) => visibleGames(all, config.pinnedTeam, tz);
     let games = buildGames(s.current, allEvents());
-    let view = pickView(games, now, tz);
+    let view = pickView(visible(games), now, tz);
     if (view.kind === 'day') {
       const day = gamesOn(games, view.date, tz);
       const hot = day.some((g) => g.state === 'in' || (!isDone(g, now) && g.when - now < CADENCE.soonMs));
       await refreshEspn([view.date, addDays(view.date, 1)], hot ? CADENCE.espnHotMs : CADENCE.espnColdMs, now, errors);
-    } else {
-      await refreshEspn(weekDates(), CADENCE.espnReviewMs, now, errors);
     }
+    // The recap needs the whole week's final scores, also when started after Saturday (e.g. an auto-update).
+    if (view.kind !== 'day' || weekendDone(games, now, tz)) await refreshEspn(weekDates(), CADENCE.espnReviewMs, now, errors);
     // Forget scoreboards for dates no longer in this week's data (a Saturday is ~1 MB).
     const keep = new Set(weekDates().map(ymd));
     for (const k of s.espn.keys()) if (!keep.has(k)) s.espn.delete(k);
     games = buildGames(s.current, allEvents());
-    view = pickView(games, now, tz);
+    view = pickView(visible(games), now, tz);
 
-    // A finished week (nothing left to play in current.json) is saved, so the recap can stay up
-    // after CFB HQ switches to next week on Sunday, until Tuesday noon.
-    if (view.kind === 'review') {
+    // A finished weekend (Saturday all final, or nothing left to play) is saved, so the recap can stay
+    // up after CFB HQ switches to next week on Sunday, until Tuesday noon. A stray Sunday game must not
+    // hold it back: on 2026-11-15 one did, CFB HQ rolled over before it ended, and no recap was saved.
+    if (view.kind === 'review' || weekendDone(games, now, tz)) {
       const snap = makeSnapshot(s.current, games, tz, now);
       if (snap.games.length && JSON.stringify(snap.games) !== JSON.stringify(s.snapshot?.games)) {
         s.snapshot = reviveSnapshot(JSON.parse(JSON.stringify(snap)));
@@ -125,7 +127,7 @@ export function createLoop({ config, device, fetchFn = fetch, clock = () => new 
     const choice = chooseView(view, s.snapshot, now, tz);
     view = withReviewPage(choice.view, now);
     const fromSnapshot = choice.recap === 'snapshot';
-    if (fromSnapshot) games = s.snapshot.games;
+    games = fromSnapshot ? s.snapshot.games : view.kind === 'review' ? games : visible(games);
     const shown = view.kind === 'day' ? gamesOn(games, view.date, tz).length : games.length;
     const done = (r) => ({ ...r, games: shown });
 

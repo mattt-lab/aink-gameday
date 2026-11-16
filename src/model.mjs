@@ -54,6 +54,7 @@ export function buildGames(current, espnEvents = []) {
       awayAbbr: side('away')?.team?.abbreviation ?? null, homeAbbr: side('home')?.team?.abbreviation ?? null,
       awayRecord: record(g.away, 'away'), homeRecord: record(g.home, 'home'),
       awayRank: g.awayRank ?? null, homeRank: g.homeRank ?? null,
+      awayConf: teams[g.away]?.conf ?? null, homeConf: teams[g.home]?.conf ?? null,
       when: new Date(g.when), network: g.network ?? null, spread: g.spread ?? null,
       stakes: stakes.get(g.cfbdId) ?? null,
       state, completed, dead, hasEspn: !!ev,
@@ -109,4 +110,28 @@ export function pickView(games, now, tz) {
 
   if (next) return { kind: 'day', date: localDate(next.when, tz), mode: 'upnext' };
   return { kind: 'review' };
+}
+
+const POWER = new Set(['SEC', 'Big Ten', 'Big 12', 'ACC']);
+const isPower = (id, conf) => POWER.has(conf) || id === 'notre-dame';
+const weekdayOf = (date) => new Date(`${date}T12:00:00Z`).getUTCDay(); // 0 = Sunday, 6 = Saturday
+
+/**
+ * The games the gameday screens consider. Saturday: all of them. Any other day: only games with a
+ * ranked team, the pinned team, or two Power 4 teams (Notre Dame counts), so a Tuesday of MAC games
+ * doesn't take the screen. (The weekend recap still uses every game.)
+ */
+export function visibleGames(games, pinnedTeam, tz) {
+  return games.filter((g) => weekdayOf(localDate(g.when, tz)) === 6
+    || g.awayRank || g.homeRank
+    || g.away === pinnedTeam || g.home === pinnedTeam
+    || (isPower(g.away, g.awayConf) && isPower(g.home, g.homeConf)));
+}
+
+/** The week's Saturday is over: every game on or before the last Saturday in the data is finished. */
+export function weekendDone(games, now, tz) {
+  const sats = games.map((g) => localDate(g.when, tz)).filter((d) => weekdayOf(d) === 6).sort();
+  const sat = sats.at(-1);
+  if (!sat) return false;
+  return games.filter((g) => !g.dead && localDate(g.when, tz) <= sat).every((g) => isDone(g, now));
 }

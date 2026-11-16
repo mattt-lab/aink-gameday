@@ -126,3 +126,29 @@ test('malformed rows are skipped, events without status do not crash', () => {
   assert.equal(games.length, current().allGames.length);
   assert.doesNotThrow(() => pickView(games, new Date('2026-11-14T16:40Z'), TZ));
 });
+
+test('visibleGames: off-Saturday games need a ranked team, the pinned team, or two Power 4 teams', async () => {
+  const { visibleGames, buildGames } = await import('../src/model.mjs');
+  const { readFileSync } = await import('node:fs');
+  const cur = JSON.parse(readFileSync(new URL('../fixtures/current-2026-11-11.json', import.meta.url), 'utf8'));
+  const all = buildGames(cur, []);
+  const shown = visibleGames(all, 'washington', 'America/Phoenix');
+  const names = (gs) => gs.map((g) => `${g.awayName} at ${g.homeName}`);
+  // Tue/Wed MAC, Thu Memphis-USF / Louisiana-ULM: hidden. Fri: FSU-Pitt (ACC-ACC), ranked UCLA and Houston: shown.
+  assert.ok(!names(shown).some((n) => /Kent State|Toledo|South Florida|UL Monroe/.test(n)));
+  assert.ok(names(shown).includes('Florida State at Pittsburgh'));
+  assert.ok(names(shown).includes('Illinois at UCLA'));
+  // Saturday is untouched.
+  const sat = (gs) => gs.filter((g) => g.when.toISOString() >= '2026-11-14T12:00:00Z').length;
+  assert.equal(sat(shown), sat(all));
+});
+
+test('weekendDone: true once every game through the week\'s Saturday is finished, whatever comes Sunday', async () => {
+  const { weekendDone } = await import('../src/model.mjs');
+  const g = (iso, done) => ({ when: new Date(iso), completed: done, dead: false, state: done ? 'post' : 'pre' });
+  const tz = 'America/Phoenix';
+  const now = new Date('2026-11-15T12:00:00Z');
+  assert.equal(weekendDone([g('2026-11-13T02:00:00Z', true), g('2026-11-14T20:00:00Z', true), g('2026-11-15T20:00:00Z', false)], now, tz), true);
+  assert.equal(weekendDone([g('2026-11-14T20:00:00Z', true), g('2026-11-15T03:00:00Z', false)], new Date('2026-11-15T04:00:00Z'), tz), false); // Saturday's late game still on
+  assert.equal(weekendDone([g('2026-11-17T01:00:00Z', false)], now, tz), false); // no Saturday in the data
+});
